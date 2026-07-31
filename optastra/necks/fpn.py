@@ -56,6 +56,9 @@ class FPN(Neck):
             }
         )
 
+        self.out_channels = {name.replace("C", "P"): out_channels for name in self.stage_names}
+        self.out_strides = {name.replace("C", "P"): 2 ** (self.stage_names.index(name) + 2) for name in self.stage_names}
+
     def forward(self, features: BackboneFeatures) -> NeckFeatures:
         laterals = {
             name: self.laterals[name](features.feature_maps[name])
