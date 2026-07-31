@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 
 from .base import Backbone, BackboneFeatures
-from ..nn.blocks.convolutions.residual import ResidualBlock, BottleneckResidualBlock
-from ..nn.blocks.convolutions.conv_norm_act import ConvNormAct
+from ..nn.blocks.convolution.residual import ResidualBlock, BottleneckResidualBlock
+from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
 from ._registry import register_backbone
 

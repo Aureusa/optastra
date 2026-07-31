@@ -11,6 +11,8 @@ from ..backbones.base import BackboneFeatures
 from ._registry import get_neck_entrypoint
 
 
+__all__ = ["Neck", "NeckFeatures"]
+
 @dataclass
 class NeckFeatures:
     """Structured neck output so CNNs and transformers share one interface.

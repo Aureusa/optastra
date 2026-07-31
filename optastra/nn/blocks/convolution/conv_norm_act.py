@@ -6,31 +6,7 @@ architectures.
 from dataclasses import dataclass
 import torch.nn as nn
 
-
-_NORMS = {
-    "batchnorm": nn.BatchNorm2d,
-    "layernorm": nn.LayerNorm,
-    "groupnorm": nn.GroupNorm,
-    None: None
-}
-_ACTS = {
-    "relu": nn.ReLU,
-    "gelu": nn.GELU,
-    None: None
-}
-
-
-@dataclass
-class ConvNormActConfig:
-    in_channels: int
-    out_channels: int
-    kernel_size: int
-    stride: int = 1
-    groups: int = 1
-    padding: int | None = None
-    norm: str | None = "batchnorm"
-    activation: str | None = "relu"
-    bias: bool | None = None
+from .._pytorch_primitives import get_norm, get_activation
 
 
 class ConvNormAct(nn.Module):
@@ -82,24 +58,10 @@ class ConvNormAct(nn.Module):
             stride=stride, padding=padding,
             groups=groups, bias=bias,
         )
-        self.norm = _NORMS[norm](out_channels) if norm else nn.Identity()
-        self.act = _ACTS[activation]() if activation else nn.Identity()
+        self.norm = get_norm(norm, out_channels)
+        self.act = get_activation(activation)
 
         self.preact = preact
-
-    @classmethod
-    def from_config(cls, config: ConvNormActConfig):
-        return cls(
-            in_channels=config.in_channels,
-            out_channels=config.out_channels,
-            kernel_size=config.kernel_size,
-            stride=config.stride,
-            groups=config.groups,
-            padding=config.padding,
-            norm=config.norm,
-            activation=config.activation,
-            bias=config.bias,
-        )
 
     def forward(self, x):
         if self.preact:
@@ -111,3 +73,4 @@ class ConvNormAct(nn.Module):
             x = self.norm(x)
             x = self.act(x)
         return x
+    

@@ -10,8 +10,8 @@ from torch import nn
 
 from .base import Backbone, BackboneFeatures
 
-from ..nn.blocks.convolutions.lrn import LocalResponseNorm
-from ..nn.blocks.convolutions.conv_norm_act import ConvNormAct
+from ..nn.blocks.convolution.lrn import LocalResponseNorm
+from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
 from ._registry import register_backbone
 

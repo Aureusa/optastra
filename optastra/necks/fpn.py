@@ -6,7 +6,10 @@ import torch.nn.functional as F
 from ..backbones.base import BackboneFeatures
 from .base import NeckFeatures, Neck
 from ._registry import register_neck
-from ..nn.blocks.convolutions.conv_norm_act import ConvNormAct
+from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
+
+
+__all__ = ["FPN"]
 
 
 class FPN(Neck):
