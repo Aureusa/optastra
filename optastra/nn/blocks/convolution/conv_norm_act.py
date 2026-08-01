@@ -58,7 +58,10 @@ class ConvNormAct(nn.Module):
             stride=stride, padding=padding,
             groups=groups, bias=bias,
         )
-        self.norm = get_norm(norm, out_channels)
+        # In pre-activation mode normalization is applied before convolution,
+        # so the normalization channel count must match the input tensor.
+        norm_channels = in_channels if preact else out_channels
+        self.norm = get_norm(norm, norm_channels)
         self.act = get_activation(activation)
 
         self.preact = preact
