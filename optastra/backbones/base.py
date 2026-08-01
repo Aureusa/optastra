@@ -34,9 +34,14 @@ class Backbone(nn.Module, ABC):
         :param overwrites: Optional keyword arguments to overwrite the default configuration.
         :return: An instance of the backbone.
         """
+        # Get the entrypoint and default configuration for the specified backbone
         entrypoint = get_backbone_entrypoint(name)
         default_cfg = get_backbone_default_config(name)
-        cfg = replace(default_cfg, **overrides)  # raises on unknown fields
+
+        # Replace overrides (raises on unknown fields)
+        cfg = replace(default_cfg, **overrides)
+
+        # Create the backbone using the entrypoint and validate its out_spec
         backbone = entrypoint(cfg)
         cls._validate_out_spec(backbone)
         return backbone
