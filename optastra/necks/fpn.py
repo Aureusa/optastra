@@ -34,11 +34,8 @@ class FPN(Neck):
         cfg: FPNConfig,
     ):
         super().__init__()
-        in_spec = cfg.in_spec
-        in_spec.require("channels", "strides")
-
-        # Unpack the input spec into local variables for convenience
-        in_channels = in_spec.channels
+        # Unpack the cfg into local variables for convenience
+        in_channels = cfg.in_spec.channels
         out_channels = cfg.out_channels
         preact = cfg.preact
 

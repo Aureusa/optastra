@@ -28,7 +28,7 @@ def register_backbone(
 
 def list_backbones(module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
     """List all registered backbone names, optionally filtered by module and/or a wildcard pattern."""
-    return _registry.list(module=module, filter=filter)
+    return _registry.list_component(module=module, filter=filter)
 
 
 def get_backbone_entrypoint(name: str) -> Callable[..., Any]:
@@ -43,3 +43,7 @@ def get_backbone_module(name: str) -> str:
 def get_backbone_default_config(name: str) -> Any:
     """Get the default configuration for a registered backbone by name."""
     return _registry.get_default_config(name)
+
+def check_backbone_registered(name: str) -> bool:
+    """Check if a backbone is registered by name."""
+    return _registry.is_registered(name)

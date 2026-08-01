@@ -60,6 +60,12 @@ class GeneralizedMeanPooling(nn.Module):
         self.eps = eps
 
     def forward(self, x):
+        """
+        Forward pass through the Generalized Mean Pooling layer.
+
+        :param x: Input tensor of shape (batch_size, channels, height, width).
+        :return: Output tensor of shape (batch_size, channels).
+        """
         # x is expected to be of shape (batch_size, channels, height, width)
         return torch.mean(x.clamp(min=self.eps).pow(self.p), dim=(2, 3)).pow(1.0 / self.p)
 

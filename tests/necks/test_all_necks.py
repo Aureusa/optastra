@@ -32,6 +32,11 @@ def test_neck_create_requires_with_in_spec_not_feature_spec():
     with pytest.raises(TypeError, match="The provided 'in_spec' must be an instance of FeatureSpec"):
         Neck.create("fpn", in_spec={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048})
 
+
+def test_neck_create_requires_in_spec_with_channels_and_strides():
+    with pytest.raises(ValueError, match="missing"):
+        Neck.create("fpn", in_spec=FeatureSpec(channels={"C2": 256}))
+
 def test_neck_create_with_backbone_infers_in_spec():
     # Create a neck with a backbone, should not raise an error
     from optastra.backbones import Backbone

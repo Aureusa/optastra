@@ -28,13 +28,12 @@ def register_neck(
 
 def list_necks(module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
     """List all registered neck names, optionally filtered by module and/or a wildcard pattern."""
-    return _registry.list(module=module, filter=filter)
+    return _registry.list_component(module=module, filter=filter)
 
 
 def get_neck_entrypoint(name: str) -> Callable[..., Any]:
     """Get the entrypoint function for a registered neck by name."""
     return _registry.get_entrypoint(name)
-
 
 def get_neck_module(name: str) -> str:
     """Get the module name for a registered neck by name."""
@@ -43,3 +42,8 @@ def get_neck_module(name: str) -> str:
 def get_neck_default_config(name: str) -> Any:
     """Get the default configuration for a registered neck by name."""
     return _registry.get_default_config(name)
+
+def check_neck_registered(name: str) -> bool:
+    """Check if a neck is registered by name."""
+    return _registry.is_registered(name)
+

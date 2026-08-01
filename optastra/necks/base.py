@@ -5,7 +5,12 @@ from dataclasses import replace, fields
 from typing import Any, Optional, Union
 import torch.nn as nn
 
-from ._registry import get_neck_entrypoint, get_neck_default_config, list_necks
+from ._registry import (
+    get_neck_entrypoint,
+    get_neck_default_config,
+    list_necks,
+    check_neck_registered
+)
 from ..nn.features import FeatureMaps, FeatureSpec
 
 
@@ -25,6 +30,24 @@ class Neck(nn.Module, ABC):
                 f"{neck.__class__.__name__} must define an 'out_spec' attribute of type FeatureSpec. Check docs for details."
             )
 
+    @staticmethod
+    def _validate_in_spec(cfg: Any) -> None:
+        """Validate cfg.in_spec when a neck config carries one."""
+        if not hasattr(cfg, "in_spec"):
+            raise ValueError(
+                f"{cfg.__class__.__name__} must define an 'in_spec' attribute of type FeatureSpec. "
+                "Check docs for details."
+            )
+
+        in_spec = getattr(cfg, "in_spec")
+        if not isinstance(in_spec, FeatureSpec):
+            raise TypeError(
+                f"The provided 'in_spec' must be an instance of FeatureSpec, got {type(in_spec)} instead. "
+                "Check docs for details."
+            )
+
+        in_spec.require("channels", "strides")
+
     @classmethod
     def create(
             cls,
@@ -43,6 +66,9 @@ class Neck(nn.Module, ABC):
         :param overrides: Optional keyword arguments to overwrite the default configuration.
         :return: An instance of the neck.
         """
+        if not check_neck_registered(name):  # Ensure the neck is registered
+            raise ValueError(f"Neck '{name}' is not registered.")
+
         if backbone is not None and overrides.get("in_spec") is not None:
             raise ValueError("Do not provide 'in_spec' when a backbone is given.")
         
@@ -72,6 +98,9 @@ class Neck(nn.Module, ABC):
 
         # Replace overrides (raises on unknown fields)
         cfg = replace(default_cfg, **overrides)
+
+        # Validate canonical in_spec fields once in the base factory.
+        cls._validate_in_spec(cfg)
 
         # Create the neck using the entrypoint and validate its out_spec
         neck = entrypoint(cfg)

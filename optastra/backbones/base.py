@@ -6,7 +6,12 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from ._registry import get_backbone_entrypoint, get_backbone_default_config, list_backbones
+from ._registry import (
+    get_backbone_entrypoint,
+    get_backbone_default_config,
+    list_backbones,
+    check_backbone_registered
+)
 from ..nn.features import FeatureMaps, FeatureSpec
 
 
@@ -31,9 +36,12 @@ class Backbone(nn.Module, ABC):
         """Create a backbone by name, optionally loading pretrained weights.
 
         :param name: Name of the backbone to create.
-        :param overwrites: Optional keyword arguments to overwrite the default configuration.
+        :param overrides: Optional keyword arguments to overwrite the default configuration.
         :return: An instance of the backbone.
         """
+        if not check_backbone_registered(name):  # Ensure the backbone is registered
+            raise ValueError(f"Backbone '{name}' is not registered.")
+
         # Get the entrypoint and default configuration for the specified backbone
         entrypoint = get_backbone_entrypoint(name)
         default_cfg = get_backbone_default_config(name)

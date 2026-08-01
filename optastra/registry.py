@@ -39,7 +39,7 @@ class ComponentRegistry:
             self._component_to_default_config[component_name] = default_config
         return fn
 
-    def list(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
+    def list_component(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
         if module is not None:
             components = list(self._module_to_components.get(module, []))
         else:
@@ -48,6 +48,9 @@ class ComponentRegistry:
         if filter not in (None, ""):
             components = fnmatch.filter(components, filter)
         return sorted(components)
+
+    def is_registered(self, name: str) -> bool:
+        return name in self._component_entrypoints
 
     def get_entrypoint(self, name: str) -> Callable[..., Any]:
         if name not in self._component_entrypoints:
