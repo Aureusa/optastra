@@ -5,10 +5,12 @@ a classic convolutional neural network
 The architecture consists of multiple convolutional layers followed by 
 fully connected layers, and it was designed for image classification tasks.
 """
-import torch
-from torch import nn
+from __future__ import annotations
 
-from .base import Backbone, BackboneFeatures
+from dataclasses import dataclass, field
+import torch.nn as nn
+
+from .base import Backbone, BackboneFeatures, FeatureSpec
 
 from ..nn.blocks.convolution.lrn import LocalResponseNorm
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
@@ -19,12 +21,16 @@ from ._registry import register_backbone
 __all__ = ["AlexNetBackbone"]
 
 
+@dataclass
+class AlexNetConfig:
+    """Config for the AlexNet backbone."""
+
+    in_channels: int = 3
+    channels: list[int] = field(default_factory=lambda: [96, 256, 384, 256, 256])
+
+
 class AlexNetBackbone(Backbone):
-    def __init__(
-            self,
-            in_channels: int = 3,
-            channels: list[int] = [96, 256, 384, 256, 256],
-        ):
+    def __init__(self, cfg: AlexNetConfig):
         """
         Implements the backbone of the AlexNet architecture.
         The architecture consists of the following layers:
@@ -34,10 +40,16 @@ class AlexNetBackbone(Backbone):
             - Conv
             - Conv -> MaxPool
 
-        :param in_channels: Number of input channels. Default is 3 for RGB images.
-        :param channels: List of output channels for each convolutional layer.
+        :param cfg: AlexNet configuration.
         """
         super(AlexNetBackbone, self).__init__()
+        self.cfg = cfg
+        in_channels = cfg.in_channels
+        channels = cfg.channels
+
+        if len(channels) != 5:
+            raise ValueError("AlexNetConfig.channels must contain exactly 5 values")
+
         self.features = nn.Sequential(
             ConvNormAct(in_channels=in_channels, out_channels=channels[0], kernel_size=11, stride=4, padding=2),
             LocalResponseNorm(size=5, alpha=1e-4, beta=0.75, k=2.0),
@@ -51,12 +63,10 @@ class AlexNetBackbone(Backbone):
             nn.MaxPool2d(kernel_size=3, stride=2),
         )
 
-        self.out_channels = {
-            "out": 256
-        }
-        self.out_strides = {
-            "out": 32
-        }
+        self.out_spec = FeatureSpec(
+            channels={"out": channels[4]},
+            strides={"out": 32},
+        )
 
     def forward(self, x):
         x = self.features(x)
@@ -65,14 +75,17 @@ class AlexNetBackbone(Backbone):
         )
 
 
-@register_backbone
-def alexnet(**kwargs) -> AlexNetBackbone:
+alexnet_configs = {
+    "alexnet": AlexNetConfig(),
+}
+
+
+@register_backbone(config=alexnet_configs["alexnet"])
+def alexnet(cfg: AlexNetConfig) -> AlexNetBackbone:
     """
     Factory function to create an AlexNet backbone.
 
-    :param pretrained: If True, loads pretrained weights. Default is False.
-    :param kwargs: Additional keyword arguments for the AlexNetBackbone constructor.
+    :param cfg: AlexNet configuration.
     :return: An instance of AlexNetBackbone.
     """
-    model = AlexNetBackbone(in_channels=3, channels=[96, 256, 384, 256, 256], **kwargs)
-    return model
+    return AlexNetBackbone(cfg)

@@ -4,10 +4,12 @@ paper "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015)
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any
 import torch
 import torch.nn as nn
 
-from .base import Backbone, BackboneFeatures
+from .base import Backbone, BackboneFeatures, FeatureSpec
 from ..nn.blocks.convolution.residual import ResidualBlock, BottleneckResidualBlock
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
@@ -16,10 +18,21 @@ from ._registry import register_backbone
 
 __all__ = ["ResNet"]
 
+
+@dataclass
+class ResNetConfig:
+    """Config for the ResNet family."""
+    block: type[ResidualBlock | BottleneckResidualBlock]
+    layers: list[int]
+    in_channels: int = 3
+    stem_channels: int = 64
+    preact: bool = False
+
+
 class ResNetStem(nn.Module):
     """7x7 conv stride 2 -> BN -> ReLU -> 3x3 maxpool stride 2. Output stride 4 (this is C1)."""
 
-    def __init__(self, in_channels: int = 3, out_channels: int = 64, preact: bool = False):
+    def __init__(self, in_channels: int = 3, out_channels: int = 64):
         super().__init__()
         self.conv = ConvNormAct(
             in_channels=in_channels,
@@ -28,7 +41,7 @@ class ResNetStem(nn.Module):
             stride=2,
             norm="batchnorm",
             activation="relu",
-            preact=preact,
+            preact=False,
         )
         self.pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
@@ -44,11 +57,7 @@ class ResNet(Backbone):
 
     def __init__(
         self,
-        block: type[ResidualBlock | BottleneckResidualBlock],
-        layers: list[int],
-        in_channels: int = 3,
-        stem_channels: int = 64,
-        preact: bool = False
+        cfg: ResNetConfig,
     ):
         """
         Initializes the ResNet backbone.
@@ -59,7 +68,17 @@ class ResNet(Backbone):
         :param stem_channels: Number of output channels for the stem. Default is 64.
         """
         super().__init__()
-        self.stem = ResNetStem(in_channels, stem_channels, preact=preact)
+        self.cfg = cfg
+
+        # Unpack configuration parameters
+        block = cfg.block
+        layers = cfg.layers
+        in_channels = cfg.in_channels
+        stem_channels = cfg.stem_channels
+        preact = cfg.preact
+
+        # Create the stem of the ResNet
+        self.stem = ResNetStem(in_channels, stem_channels)
 
         stage_channels = [64, 128, 256, 512]
         stage_strides = [1, 2, 2, 2]  # stage1 keeps stride (pool already halved it)
@@ -70,10 +89,10 @@ class ResNet(Backbone):
             self.stages.append(self._make_stage(block, in_ch, width, depth, stride, preact=preact))
             in_ch = width * block.expansion
 
-        self.out_channels = {
-            f"C{i + 2}": stage_channels[i] * block.expansion for i in range(4)
-        }
-        self.out_strides = {"C2": 4, "C3": 8, "C4": 16, "C5": 32}
+        self.out_spec = FeatureSpec(
+            channels={f"C{i + 2}": stage_channels[i] * block.expansion for i in range(4)},
+            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
+        )
 
     @staticmethod
     def _make_stage(
@@ -114,22 +133,31 @@ class ResNet(Backbone):
         return BackboneFeatures(feature_maps=feature_maps)
 
 
-@register_backbone
-def resnet18(**kwargs) -> ResNet:
-    return ResNet(ResidualBlock, [2, 2, 2, 2], **kwargs)
+resnet_configs = {
+    "resnet18": ResNetConfig(block=ResidualBlock, layers=[2, 2, 2, 2]),
+    "resnet34": ResNetConfig(block=ResidualBlock, layers=[3, 4, 6, 3]),
+    "resnet50": ResNetConfig(block=BottleneckResidualBlock, layers=[3, 4, 6, 3]),
+    "resnet101": ResNetConfig(block=BottleneckResidualBlock, layers=[3, 4, 23, 3]),
+    "resnet152": ResNetConfig(block=BottleneckResidualBlock, layers=[3, 8, 36, 3]),
+}
 
-@register_backbone
-def resnet34(**kwargs) -> ResNet:
-    return ResNet(ResidualBlock, [3, 4, 6, 3], **kwargs)
 
-@register_backbone
-def resnet50(**kwargs) -> ResNet:
-    return ResNet(BottleneckResidualBlock, [3, 4, 6, 3], **kwargs)
+@register_backbone(config=resnet_configs["resnet18"])
+def resnet18(cfg: ResNetConfig) -> ResNet:
+    return ResNet(cfg)
 
-@register_backbone
-def resnet101(**kwargs) -> ResNet:
-    return ResNet(BottleneckResidualBlock, [3, 4, 23, 3], **kwargs)
+@register_backbone(config=resnet_configs["resnet34"])
+def resnet34(cfg: ResNetConfig) -> ResNet:
+    return ResNet(cfg)
 
-@register_backbone
-def resnet152(**kwargs) -> ResNet:
-    return ResNet(BottleneckResidualBlock, [3, 8, 36, 3], **kwargs)
+@register_backbone(config=resnet_configs["resnet50"])
+def resnet50(cfg: ResNetConfig) -> ResNet:
+    return ResNet(cfg)
+
+@register_backbone(config=resnet_configs["resnet101"])
+def resnet101(cfg: ResNetConfig) -> ResNet:
+    return ResNet(cfg)
+
+@register_backbone(config=resnet_configs["resnet152"])
+def resnet152(cfg: ResNetConfig) -> ResNet:
+    return ResNet(cfg)

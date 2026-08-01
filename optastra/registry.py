@@ -15,8 +15,9 @@ class ComponentRegistry:
         self._module_to_components: DefaultDict[str, Set[str]] = defaultdict(set)
         self._component_to_module: Dict[str, str] = {}
         self._component_entrypoints: Dict[str, Callable[..., Any]] = {}
+        self._component_to_default_config: Dict[str, Any] = {}
 
-    def register(self, fn: T) -> T:
+    def register(self, fn: T, *, default_config: Optional[Any] = None) -> T:
         mod = sys.modules[fn.__module__]
         module_name = fn.__module__.split('.')[-1]
         component_name = fn.__name__
@@ -34,6 +35,8 @@ class ComponentRegistry:
         self._component_entrypoints[component_name] = fn
         self._component_to_module[component_name] = module_name
         self._module_to_components[module_name].add(component_name)
+        if default_config is not None:
+            self._component_to_default_config[component_name] = default_config
         return fn
 
     def list(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
@@ -55,3 +58,8 @@ class ComponentRegistry:
         if name not in self._component_to_module:
             raise ValueError(f'{self.component_name} {name} is not registered')
         return self._component_to_module[name]
+
+    def get_default_config(self, name: str) -> Any:
+        if name not in self._component_to_default_config:
+            raise ValueError(f'{self.component_name} {name} does not have a default config')
+        return self._component_to_default_config[name]

@@ -6,9 +6,24 @@ from optastra.registry import ComponentRegistry
 _registry = ComponentRegistry("backbone")
 
 
-def register_backbone(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator for registering backbones. The function name is used as the backbone name."""
-    return _registry.register(fn)
+def register_backbone(
+    fn: Optional[Callable[..., Any]] = None,
+    *,
+    config: Optional[Any] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
+    """Decorator for registering backbones.
+
+    Supports both usages:
+    - @register_backbone
+    - @register_backbone(config=...)
+    """
+
+    def decorator(inner_fn: Callable[..., Any]) -> Callable[..., Any]:
+        return _registry.register(inner_fn, default_config=config)
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
 def list_backbones(module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
@@ -24,3 +39,7 @@ def get_backbone_entrypoint(name: str) -> Callable[..., Any]:
 def get_backbone_module(name: str) -> str:
     """Get the module name for a registered backbone by name."""
     return _registry.get_module(name)
+
+def get_backbone_default_config(name: str) -> Any:
+    """Get the default configuration for a registered backbone by name."""
+    return _registry.get_default_config(name)

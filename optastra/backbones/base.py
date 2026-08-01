@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass, field, fields, replace
+from typing import Any
 import torch
 import torch.nn as nn
 
-from ._registry import get_backbone_entrypoint
+from ._registry import get_backbone_entrypoint, get_backbone_default_config
 
 
-__all__ = ["Backbone", "BackboneFeatures"]
+__all__ = ["Backbone", "BackboneFeatures", "FeatureSpec"]
 
 @dataclass
 class BackboneFeatures:
@@ -27,28 +27,52 @@ class BackboneFeatures:
     cls_token: torch.Tensor | None = None
 
 
+@dataclass
+class FeatureSpec:
+    """What a backbone/neck produces, so the next component can configure itself."""
+    channels: dict[str, int] = field(default_factory=dict)   # stage -> channels
+    strides: dict[str, int] = field(default_factory=dict)    # stage -> stride
+    embed_dim: int | None = None     # for transformer/global embeddings
+    num_tokens: int | None = None
+
+
 class Backbone(nn.Module, ABC):
     """A backbone only produces features -- it knows nothing about tasks."""
 
-    #: maps stage name -> output channel count, e.g. {"C2": 256, "C3": 512, ...}
-    out_channels: dict[str, int]
-    #: maps stage name -> stride relative to input image, e.g. {"C2": 4, "C3": 8, ...}
-    out_strides: dict[str, int]
-
     @classmethod
-    def create(cls, name: str) -> Backbone: # Factory method to create a backbone by name
+    def create(cls, name: str, **overrides) -> Backbone: # Factory method to create a backbone by name
         """Create a backbone by name, optionally loading pretrained weights.
 
-        Args:
-            name: Name of the backbone to create.
-            pretrained: If True, load pretrained weights if available.
-            **kwargs: Additional keyword arguments passed to the backbone constructor.
-
-        Returns:
-            An instance of the requested backbone.
+        :param name: Name of the backbone to create.
+        :param overwrites: Optional keyword arguments to overwrite the default configuration.
+        :return: An instance of the backbone.
         """
         entrypoint = get_backbone_entrypoint(name)
-        return entrypoint()
+        default_cfg = get_backbone_default_config(name)
+        cfg = replace(default_cfg, **overrides)  # raises on unknown fields
+        return entrypoint(cfg)
+
+    @classmethod
+    def describe(cls, name: str) -> dict[str, int]: # Factory method to describe a backbone by name
+        """Describe a backbone by name, returning its out_channels and out_strides.
+
+        :param name: Name of the backbone to describe.
+        :return: A dictionary containing the out_channels and out_strides of the backbone.
+        """
+        cfg = get_backbone_default_config(name)
+        print(f"{name}:")
+        for f in fields(cfg):
+            current = getattr(cfg, f.name)
+            print(f"  {f.name}: {f.type}  = {current!r}")
+
+    @classmethod
+    def config(cls, name: str) -> Any: # Factory method to get the default config of a backbone by name
+        """Get the default configuration for a backbone by name.
+
+        :param name: Name of the backbone to get the configuration for.
+        :return: The default configuration of the backbone.
+        """
+        return get_backbone_default_config(name)
 
     def forward(self, images: torch.Tensor) -> BackboneFeatures:
         raise NotImplementedError

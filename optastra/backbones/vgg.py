@@ -5,16 +5,28 @@ Karen Simonyan and Andrew Zisserman (2014).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from .base import Backbone, BackboneFeatures
+from .base import Backbone, BackboneFeatures, FeatureSpec
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
 from ._registry import register_backbone
 
 
 __all__ = ["VGG"]
+
+
+@dataclass
+class VGGConfig:
+    """Config for the VGG family."""
+
+    layers: list[int]
+    in_channels: int = 3
+    stem_channels: int = 64
+    preact: bool = False
+
 
 class VGGStem(nn.Module):
     """3x3 conv stride 1 -> BN -> ReLU. Output stride 1 (this is C1)."""
@@ -41,13 +53,7 @@ class VGG(Backbone):
     Stage strides relative to input: C1 = 1, C2 = 2, C3 = 4, C4 = 8, C5 = 16.
     """
 
-    def __init__(
-        self,
-        layers: list[int],
-        in_channels: int = 3,
-        stem_channels: int = 64,
-        preact: bool = False
-    ):
+    def __init__(self, cfg: VGGConfig):
         super().__init__()
         """
         Initializes the VGG backbone:
@@ -57,11 +63,14 @@ class VGG(Backbone):
         Conv -> Conv -> Conv -> MaxPool (C4)
         Conv -> Conv -> Conv -> MaxPool (C5)
 
-        :param layers: A list containing the number of blocks in each stage.
-        :param in_channels: Number of input channels. Default is 3.
-        :param stem_channels: Number of output channels for the stem. Default is 64.
-        :param preact: Whether to use pre-activation in the stem. Default is False.
+        :param cfg: VGG configuration.
         """
+        self.cfg = cfg
+        layers = cfg.layers
+        in_channels = cfg.in_channels
+        stem_channels = cfg.stem_channels
+        preact = cfg.preact
+
         stage_channels = [stem_channels * (2 ** i) for i in range(len(layers))]
         VGG_stages = []
 
@@ -97,10 +106,10 @@ class VGG(Backbone):
 
         self.stages = nn.Sequential(*VGG_stages)
 
-        self.out_channels = {
-            f"C{i + 1}": stage_channels[i] for i in range(len(layers))
-        }
-        self.out_strides = {f"C{i + 1}": 2 ** i for i in range(len(layers))}
+        self.out_spec = FeatureSpec(
+            channels={f"C{i + 1}": stage_channels[i] for i in range(len(layers))},
+            strides={f"C{i + 1}": 2 ** i for i in range(len(layers))},
+        )
 
     def forward(self, x):
         feature_maps = {}
@@ -115,42 +124,42 @@ class VGG(Backbone):
 
         return BackboneFeatures(feature_maps=feature_maps)
 
-@register_backbone
-def vgg16(**kwargs) -> VGG:
+vgg_configs = {
+    "vgg11": VGGConfig(layers=[1, 1, 2, 2, 2]),
+    "vgg13": VGGConfig(layers=[2, 2, 2, 2, 2]),
+    "vgg16": VGGConfig(layers=[2, 2, 3, 3, 3]),
+    "vgg19": VGGConfig(layers=[2, 2, 4, 4, 4]),
+}
+
+
+@register_backbone(config=vgg_configs["vgg16"])
+def vgg16(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG16 backbone.
 
-    :param in_channels: Number of input channels. Default is 3.
-    :param stem_channels: Number of output channels for the stem. Default is 64.
-    :param preact: Whether to use pre-activation in the stem. Default is False.
+    :param cfg: VGG configuration.
     """
-    return VGG(layers=[2, 2, 3, 3, 3], **kwargs)
+    return VGG(cfg)
 
-@register_backbone
-def vgg19(**kwargs) -> VGG:
+@register_backbone(config=vgg_configs["vgg19"])
+def vgg19(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG19 backbone.
 
-    :param in_channels: Number of input channels. Default is 3.
-    :param stem_channels: Number of output channels for the stem. Default is 64.
-    :param preact: Whether to use pre-activation in the stem. Default is False.
+    :param cfg: VGG configuration.
     """
-    return VGG(layers=[2, 2, 4, 4, 4], **kwargs)
+    return VGG(cfg)
 
-@register_backbone
-def vgg11(**kwargs) -> VGG:
+@register_backbone(config=vgg_configs["vgg11"])
+def vgg11(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG11 backbone.
 
-    :param in_channels: Number of input channels. Default is 3.
-    :param stem_channels: Number of output channels for the stem. Default is 64.
-    :param preact: Whether to use pre-activation in the stem. Default is False.
+    :param cfg: VGG configuration.
     """
-    return VGG(layers=[1, 1, 2, 2, 2], **kwargs)
+    return VGG(cfg)
 
-@register_backbone
-def vgg13(**kwargs) -> VGG:
+@register_backbone(config=vgg_configs["vgg13"])
+def vgg13(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG13 backbone.
 
-    :param in_channels: Number of input channels. Default is 3.
-    :param stem_channels: Number of output channels for the stem. Default is 64.
-    :param preact: Whether to use pre-activation in the stem. Default is False.
+    :param cfg: VGG configuration.
     """
-    return VGG(layers=[2, 2, 2, 2, 2], **kwargs)
+    return VGG(cfg)
