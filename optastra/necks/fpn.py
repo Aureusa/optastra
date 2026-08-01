@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..backbones.base import BackboneFeatures
-from .base import NeckFeatures, Neck
+from .base import Neck
 from ._registry import register_neck
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
+from ..nn.features import FeatureSpec, FeatureMaps
 
 
 __all__ = ["FPN"]
+
+
+@dataclass
+class FPNConfig:
+    """Config for the FPN neck."""
+    in_spec: FeatureSpec  # e.g. {"C2": 256, "C3": 512, "C4": 1024, "C5": 2048}
+    out_channels: int = 256
+    preact: bool = False
 
 
 class FPN(Neck):
@@ -22,12 +31,18 @@ class FPN(Neck):
 
     def __init__(
         self,
-        in_channels: dict[str, int],  # e.g. {"C2": 256, "C3": 512, "C4": 1024, "C5": 2048}
-        out_channels: int = 256,
-        preact: bool = False
+        cfg: FPNConfig,
     ):
         super().__init__()
-        self.stage_names = sorted(in_channels.keys())  # ["C2", "C3", "C4", "C5"]
+        in_spec = cfg.in_spec
+        in_spec.require("channels", "strides")
+
+        # Unpack the input spec into local variables for convenience
+        in_channels = in_spec.channels
+        out_channels = cfg.out_channels
+        preact = cfg.preact
+
+        self.stage_names = sorted(in_channels.keys())  # e.g. ["C2", "C3", "C4", "C5"]
 
         self.laterals = nn.ModuleDict(
             {
@@ -56,10 +71,12 @@ class FPN(Neck):
             }
         )
 
-        self.out_channels = {name.replace("C", "P"): out_channels for name in self.stage_names}
-        self.out_strides = {name.replace("C", "P"): 2 ** (self.stage_names.index(name) + 2) for name in self.stage_names}
+        self.out_spec = FeatureSpec(
+            channels={name.replace("C", "P"): out_channels for name in self.stage_names},
+            strides={name.replace("C", "P"): 2 ** (self.stage_names.index(name) + 2) for name in self.stage_names},
+        )
 
-    def forward(self, features: BackboneFeatures) -> NeckFeatures:
+    def forward(self, features: FeatureMaps) -> FeatureMaps:
         laterals = {
             name: self.laterals[name](features.feature_maps[name])
             for name in self.stage_names
@@ -79,16 +96,25 @@ class FPN(Neck):
             name.replace("C", "P"): self.outputs[name](merged[name])
             for name in self.stage_names
         }
-        return NeckFeatures(feature_maps=outputs)
+        return FeatureMaps(feature_maps=outputs)
+
+fpn_configs = {
+    "fpn": FPNConfig(
+        in_spec=FeatureSpec(
+            channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
+            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
+        ),
+        out_channels=256,
+        preact=False,
+    )
+}
 
 
-@register_neck
-def fpn(**kwargs) -> FPN:
+@register_neck(config=fpn_configs["fpn"])
+def fpn(cfg: FPNConfig) -> FPN:
     """Factory function to create an FPN neck.
 
-    :param in_channels: dict of stage_name -> channel count, e.g. {"C2": 256, "C3": 512, "C4": 1024, "C5": 2048}
-    :param out_channels: int, number of channels in the output feature maps (default: 256)
-    :param preact: bool, whether to use pre-activation in the convolution
+    :param cfg: FPNConfig instance containing the configuration for the FPN
     :return: FPN instance
     """
-    return FPN(**kwargs)
+    return FPN(cfg)

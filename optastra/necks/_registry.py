@@ -6,9 +6,24 @@ from optastra.registry import ComponentRegistry
 _registry = ComponentRegistry("neck")
 
 
-def register_neck(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator for registering necks. The function name is used as the neck name."""
-    return _registry.register(fn)
+def register_neck(
+    fn: Optional[Callable[..., Any]] = None,
+    *,
+    config: Optional[Any] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
+    """Decorator for registering necks.
+
+    Supports both usages:
+    - @register_neck
+    - @register_neck(config=...)
+    """
+
+    def decorator(inner_fn: Callable[..., Any]) -> Callable[..., Any]:
+        return _registry.register(inner_fn, default_config=config)
+
+    if fn is not None:
+        return decorator(fn)
+    return decorator
 
 
 def list_necks(module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
@@ -24,3 +39,7 @@ def get_neck_entrypoint(name: str) -> Callable[..., Any]:
 def get_neck_module(name: str) -> str:
     """Get the module name for a registered neck by name."""
     return _registry.get_module(name)
+
+def get_neck_default_config(name: str) -> Any:
+    """Get the default configuration for a registered neck by name."""
+    return _registry.get_default_config(name)
