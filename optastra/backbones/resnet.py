@@ -4,14 +4,14 @@ paper "Deep Residual Learning for Image Recognition" by Kaiming He et al. (2015)
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from .base import Backbone, BackboneFeatures, FeatureSpec
+from .base import Backbone
 from ..nn.blocks.convolution.residual import ResidualBlock, BottleneckResidualBlock
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
+from ..nn.features import FeatureSpec, FeatureMaps
 
 from ._registry import register_backbone
 
@@ -118,19 +118,19 @@ class ResNet(Backbone):
             layers.append(block(out_channels * block.expansion, out_channels, preact=preact))
         return nn.Sequential(*layers)
 
-    def forward(self, images: torch.Tensor) -> BackboneFeatures:
+    def forward(self, images: torch.Tensor) -> FeatureMaps:
         """
         Forward pass through the ResNet backbone.
         
         :param images: Input tensor of shape (B, C, H, W).
-        :return: BackboneFeatures containing feature maps from each stage.
+        :return: FeatureMaps containing feature maps from each stage.
         """
         x = self.stem(images)
         feature_maps = {}
         for i, stage in enumerate(self.stages):
             x = stage(x)
             feature_maps[f"C{i + 2}"] = x
-        return BackboneFeatures(feature_maps=feature_maps)
+        return FeatureMaps(feature_maps=feature_maps)
 
 
 resnet_configs = {

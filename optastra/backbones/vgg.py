@@ -6,11 +6,11 @@ Karen Simonyan and Andrew Zisserman (2014).
 from __future__ import annotations
 
 from dataclasses import dataclass
-import torch
 import torch.nn as nn
 
-from .base import Backbone, BackboneFeatures, FeatureSpec
+from .base import Backbone
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
+from ..nn.features import FeatureSpec, FeatureMaps
 
 from ._registry import register_backbone
 
@@ -111,7 +111,7 @@ class VGG(Backbone):
             strides={f"C{i + 1}": 2 ** i for i in range(len(layers))},
         )
 
-    def forward(self, x):
+    def forward(self, x) -> FeatureMaps:
         feature_maps = {}
         stage_outputs = []
         for stage in self.stages:
@@ -122,7 +122,7 @@ class VGG(Backbone):
         for i, stage_out in enumerate(stage_outputs):
             feature_maps[f"C{i + 1}"] = stage_out
 
-        return BackboneFeatures(feature_maps=feature_maps)
+        return FeatureMaps(feature_maps=feature_maps)
 
 vgg_configs = {
     "vgg11": VGGConfig(layers=[1, 1, 2, 2, 2]),

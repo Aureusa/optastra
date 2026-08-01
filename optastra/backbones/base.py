@@ -1,46 +1,33 @@
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import fields, replace
 from typing import Any
 import torch
 import torch.nn as nn
 
-from ._registry import get_backbone_entrypoint, get_backbone_default_config
+from ._registry import get_backbone_entrypoint, get_backbone_default_config, list_backbones
+from ..nn.features import FeatureMaps, FeatureSpec
 
 
-__all__ = ["Backbone", "BackboneFeatures", "FeatureSpec"]
-
-@dataclass
-class BackboneFeatures:
-    """Structured backbone output so CNNs and transformers share one interface.
-
-    feature_maps: dict of stage_name -> tensor, e.g. {"C2": ..., "C3": ..., ...}
-        Only CNNs populate this in general; used by necks like FPN.
-    pooled: optional (B, C) global embedding, e.g. after global average pool.
-    patch_tokens / cls_token: optional, populated by transformer backbones.
-    """
-
-    feature_maps: dict[str, torch.Tensor] = field(default_factory=dict)
-    pooled: torch.Tensor | None = None
-    patch_tokens: torch.Tensor | None = None
-    cls_token: torch.Tensor | None = None
-
-
-@dataclass
-class FeatureSpec:
-    """What a backbone/neck produces, so the next component can configure itself."""
-    channels: dict[str, int] = field(default_factory=dict)   # stage -> channels
-    strides: dict[str, int] = field(default_factory=dict)    # stage -> stride
-    embed_dim: int | None = None     # for transformer/global embeddings
-    num_tokens: int | None = None
+__all__ = ["Backbone"]
 
 
 class Backbone(nn.Module, ABC):
     """A backbone only produces features -- it knows nothing about tasks."""
 
+    out_spec: FeatureSpec  # type: ignore
+
+    @staticmethod
+    def _validate_out_spec(backbone: "Backbone") -> None:
+        """Ensure every created backbone exposes a valid FeatureSpec."""
+        if not isinstance(backbone.out_spec, FeatureSpec):
+            raise ValueError(
+                f"{backbone.__class__.__name__} must define an 'out_spec' attribute of type FeatureSpec. Check docs for details."
+            )
+
     @classmethod
-    def create(cls, name: str, **overrides) -> Backbone: # Factory method to create a backbone by name
+    def create(cls, name: str, **overrides) -> Backbone:  # Factory method to create a backbone by name
         """Create a backbone by name, optionally loading pretrained weights.
 
         :param name: Name of the backbone to create.
@@ -50,7 +37,9 @@ class Backbone(nn.Module, ABC):
         entrypoint = get_backbone_entrypoint(name)
         default_cfg = get_backbone_default_config(name)
         cfg = replace(default_cfg, **overrides)  # raises on unknown fields
-        return entrypoint(cfg)
+        backbone = entrypoint(cfg)
+        cls._validate_out_spec(backbone)
+        return backbone
 
     @classmethod
     def describe(cls, name: str) -> dict[str, int]: # Factory method to describe a backbone by name
@@ -74,5 +63,16 @@ class Backbone(nn.Module, ABC):
         """
         return get_backbone_default_config(name)
 
-    def forward(self, images: torch.Tensor) -> BackboneFeatures:
+    @classmethod
+    def list_backbones(cls, module: str | None = None, filter: str | None = None) -> list[str]: # Factory method to list all registered backbones
+        """
+        List all registered backbones, optionally filtered by module and/or a wildcard pattern.
+
+        :param module: Optional module name to filter the backbones by.
+        :param filter: Optional wildcard pattern to filter the backbones by.
+        :return: A list of registered backbone names.
+        """
+        return list_backbones(module=module, filter=filter)
+
+    def forward(self, images: torch.Tensor) -> FeatureMaps:
         raise NotImplementedError

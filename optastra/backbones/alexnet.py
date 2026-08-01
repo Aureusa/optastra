@@ -10,10 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import torch.nn as nn
 
-from .base import Backbone, BackboneFeatures, FeatureSpec
+from .base import Backbone
 
 from ..nn.blocks.convolution.lrn import LocalResponseNorm
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
+from ..nn.features import FeatureSpec, FeatureMaps
 
 from ._registry import register_backbone
 
@@ -70,7 +71,7 @@ class AlexNetBackbone(Backbone):
 
     def forward(self, x):
         x = self.features(x)
-        return BackboneFeatures(
+        return FeatureMaps(
             feature_maps={"out": x},
         )
 
