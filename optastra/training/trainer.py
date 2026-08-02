@@ -1,0 +1,105 @@
+from __future__ import annotations
+from typing import Iterable, Mapping, Any
+import torch
+import torch.nn as nn
+from collections.abc import Mapping as MappingABC
+
+from ..tasks.base import Task
+from .state import TrainerState
+from .storage import EventStorage
+from .hooks.base import Hook
+
+
+class Trainer:
+    """Orchestrates model + task + optimizer + hooks. Knows nothing about
+    what the task computes -- it only calls task.run_step and reads the
+    generic TaskStepOutput fields (loss, losses, metrics)."""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        task: Task,
+        optimizer,
+        hooks: Iterable[Hook] = (),
+        device: str | torch.device = "cuda",
+    ):
+        resolved_device = self._resolve_device(device)
+        model = model.to(resolved_device)
+        self.storage = EventStorage()
+        self.state = TrainerState(model=model, task=task, optimizer=optimizer, storage=self.storage, device=resolved_device)
+        self.hooks: list[Hook] = list(hooks)
+
+    @staticmethod
+    def _resolve_device(device: str | torch.device) -> torch.device:
+        resolved = torch.device(device)
+        if resolved.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA is selected as the training device, but no CUDA device is available. "
+                "Set device='cpu' explicitly if you want to run on CPU."
+            )
+        return resolved
+
+    @staticmethod
+    def _move_to_device(data: Any, device: torch.device) -> Any:
+        if torch.is_tensor(data):
+            return data.to(device, non_blocking=True)
+        if isinstance(data, MappingABC):
+            return {k: Trainer._move_to_device(v, device) for k, v in data.items()}
+        if isinstance(data, tuple):
+            return tuple(Trainer._move_to_device(v, device) for v in data)
+        if isinstance(data, list):
+            return [Trainer._move_to_device(v, device) for v in data]
+        return data
+
+    def register_hooks(self, hooks: Iterable[Hook]) -> None:
+        self.hooks.extend(hooks)
+
+    def _run_hooks(self, method_name: str) -> None:
+        for hook in self.hooks:
+            getattr(hook, method_name)(self.state)
+
+    def train(self, dataloader: Iterable[Mapping[str, Any]], max_iter: int) -> None:
+        self.state.max_iter = max_iter
+        self._run_hooks("before_train")
+
+        data_iter = iter(dataloader)
+        for it in range(max_iter):
+            if self.state.should_stop:
+                break
+            self.state.iter = self.storage.iter = it
+            self._run_hooks("before_step")
+
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(dataloader)
+                self.state.epoch += 1
+                batch = next(data_iter)
+
+            batch = self._move_to_device(batch, self.state.device)
+
+            self.state.optimizer.zero_grad()
+            output = self.state.task.run_step(self.state.model, batch, stage="train")
+            output.loss.backward()
+            self.state.optimizer.step()
+
+            self.state.last_output = output
+            self.storage.put_scalar("loss", output.loss.item())
+            self.storage.put_scalars(**{k: v.item() for k, v in output.losses.items()})
+
+            self._run_hooks("after_step")
+
+        self._run_hooks("after_train")
+
+    @torch.no_grad()
+    def evaluate(self, dataloader: Iterable[Mapping[str, Any]]) -> dict[str, float]:
+        self.state.model.eval()
+        all_metrics: dict[str, list[float]] = {}
+        for batch in dataloader:
+            batch = self._move_to_device(batch, self.state.device)
+            output = self.state.task.run_step(self.state.model, batch, stage="val")
+            for k, v in output.metrics.items():
+                all_metrics.setdefault(k, []).append(float(v))
+        self.state.model.train()
+        return {k: sum(v) / len(v) for k, v in all_metrics.items()}
+    

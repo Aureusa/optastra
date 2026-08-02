@@ -1,0 +1,23 @@
+from __future__ import annotations
+from abc import ABC
+
+from ..state import TrainerState
+
+
+class Hook(ABC):
+    """Observer of the training loop. A hook only ever reads TrainerState /
+    EventStorage -- it never touches the model, task, or TaskStepOutput
+    directly, so new tasks or new TaskStepOutput fields never require hooks
+    to change. Override only the lifecycle methods you need."""
+
+    def before_train(self, state: TrainerState) -> None: ...
+    def after_train(self, state: TrainerState) -> None: ...
+    def before_epoch(self, state: TrainerState) -> None: ...
+    def after_epoch(self, state: TrainerState) -> None: ...
+    def before_step(self, state: TrainerState) -> None: ...
+    def after_step(self, state: TrainerState) -> None: ...
+
+    # optional, for resumable hooks (e.g. checkpoint counters, EMA state)
+    def state_dict(self) -> dict: return {}
+    def load_state_dict(self, state: dict) -> None: return
+    
