@@ -27,12 +27,10 @@ def test_neck_config_returns_fpn_default_config():
 
     assert cfg.out_channels == 256
     assert cfg.preact is False
-    assert cfg.in_spec.channels["C2"] == 256
-    assert cfg.in_spec.strides["C5"] == 32
 
 
 def test_neck_create_builds_fpn_with_overrides():
-    model = Neck.create("fpn", in_spec=_fpn_in_spec(), out_channels=128)
+    model = Neck.create("fpn", _fpn_in_spec(), out_channels=128)
 
     assert model.out_spec.channels["P2"] == 128
     assert model.out_spec.channels["P5"] == 128
@@ -49,6 +47,5 @@ def test_neck_describe_prints_fpn_config(capsys):
     captured = capsys.readouterr()
 
     assert "fpn:" in captured.out
-    assert "in_spec" in captured.out
     assert "out_channels" in captured.out
     assert "preact" in captured.out

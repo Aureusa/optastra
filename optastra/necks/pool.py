@@ -30,7 +30,6 @@ def _check_stage_in_spec(stage: str, in_spec: FeatureSpec) -> None:
 
 @dataclass
 class GlobalPoolConfig:
-    in_spec: FeatureSpec
     pool_type: str = "avg"  # "avg" or "max"
     stage: str | None = None  # None = use the deepest/highest-stride stage
 
@@ -40,9 +39,9 @@ class GlobalPool(Neck):
     pooled embedding, so any downstream head can require embed_dim without
     caring whether it came from a CNN's spatial maps or a transformer's CLS token."""
 
-    def __init__(self, cfg: GlobalPoolConfig):
+    def __init__(self, in_spec: FeatureSpec, cfg: GlobalPoolConfig):
         super().__init__()
-        in_spec = cfg.in_spec
+        in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)
         if cfg.pool_type == "avg":
@@ -68,7 +67,6 @@ class GlobalPool(Neck):
 
 @dataclass
 class GeMConfig:
-    in_spec: FeatureSpec
     stage: str | None = None  # None = use the deepest/highest-stride stage
     p: float = 3.0  # GeM pooling parameter
     eps: float = 1e-6  # Small value to avoid division by zero
@@ -77,9 +75,9 @@ class GeMConfig:
 class GeM(Neck):
     """Generalized Mean Pooling (GeM) layer."""
 
-    def __init__(self, cfg: GeMConfig):
+    def __init__(self, in_spec: FeatureSpec, cfg: GeMConfig):
         super().__init__()
-        in_spec = cfg.in_spec
+        in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)
 
@@ -101,16 +99,15 @@ class GeM(Neck):
 # TODO: Migh need to move it to a seperate file, like transformer_pool.py
 @dataclass
 class TokenPoolConfig: # Experimental still, not fully integrated into the framework yet
-    in_spec: FeatureSpec
     stage: str | None = None  # None = use the deepest/highest-stride stage
 
 
 class TokenPool(Neck):
     """Token Pooling layer for pooling token embeddings."""
 
-    def __init__(self, cfg: TokenPoolConfig):
+    def __init__(self, in_spec: FeatureSpec, cfg: TokenPoolConfig):
         super().__init__()
-        in_spec = cfg.in_spec
+        in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)
 
@@ -126,54 +123,32 @@ class TokenPool(Neck):
 
 
 pool_configs = {
-    "global_avg_pool": GlobalPoolConfig(
-        in_spec=FeatureSpec(
-            channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
-            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
-        ),
-        pool_type="avg"
-    ),
-    "global_max_pool": GlobalPoolConfig(
-        in_spec=FeatureSpec(
-                    channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
-                    strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
-                ),
-        pool_type="max"),
-    "gem_pool": GeMConfig(
-        in_spec=FeatureSpec(
-            channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
-            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
-        ),
-        p=3.0,
-        eps=1e-6
-    ),
-    "token_pool": TokenPoolConfig(
-        in_spec=FeatureSpec(
-            channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
-            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
-        )
-    ),
+    "global_avg_pool": GlobalPoolConfig(pool_type="avg"),
+    "global_max_pool": GlobalPoolConfig(pool_type="max"),
+    "gem_pool": GeMConfig(p=3.0, eps=1e-6),
+    "token_pool": TokenPoolConfig(stage=None),
 }
 
 
 @register_neck(config=pool_configs["global_avg_pool"])
-def global_avg_pool(cfg: GlobalPoolConfig) -> GlobalPool:
+def global_avg_pool(in_spec: FeatureSpec, cfg: GlobalPoolConfig) -> GlobalPool:
     """Factory function to create a Global Average Pooling neck."""
-    return GlobalPool(cfg)
+    return GlobalPool(in_spec, cfg)
 
 
 @register_neck(config=pool_configs["global_max_pool"])
-def global_max_pool(cfg: GlobalPoolConfig) -> GlobalPool:
+def global_max_pool(in_spec: FeatureSpec, cfg: GlobalPoolConfig) -> GlobalPool:
     """Factory function to create a Global Max Pooling neck."""
-    return GlobalPool(cfg)
+    return GlobalPool(in_spec, cfg)
 
 
 @register_neck(config=pool_configs["gem_pool"])
-def gem_pool(cfg: GeMConfig) -> GeM:
+def gem_pool(in_spec: FeatureSpec, cfg: GeMConfig) -> GeM:
     """Factory function to create a Generalized Mean Pooling neck."""
-    return GeM(cfg)
+    return GeM(in_spec, cfg)
+
 
 @register_neck(config=pool_configs["token_pool"])
-def token_pool(cfg: TokenPoolConfig) -> TokenPool:
+def token_pool(in_spec: FeatureSpec, cfg: TokenPoolConfig) -> TokenPool:
     """Factory function to create a Token Pooling neck."""
-    return TokenPool(cfg)
+    return TokenPool(in_spec, cfg)

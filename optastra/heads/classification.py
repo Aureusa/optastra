@@ -1,15 +1,27 @@
+from dataclasses import dataclass
+
 import torch
-import torch.nn as nn
 from typing import Union
 
-from .base import Head, HeadFeatures
+from .base import Head
 from ._registry import register_head
 
 from ..nn.blocks.readout.mlp import MLP
-from ..nn.blocks.readout.pooling import GlobalAvgPool2d, GlobalMaxPool2d
+from ..nn.features import FeatureSpec, HeadOutput, FeatureMaps
 
-from ..backbones import BackboneFeatures
-from ..necks import NeckFeatures
+
+__all__ = ["ClassificationHead"]
+
+
+@dataclass
+class ClassificationHeadConfig:
+    """Configuration for a classification head."""
+    hidden_features: int = 1024
+    num_layers: int = 2
+    activation: str = "gelu"
+    norm: Union[str, None] = None
+    dropout: float = 0.0
+    num_classes: int = 1000
 
 
 class ClassificationHead(Head):
@@ -17,84 +29,48 @@ class ClassificationHead(Head):
 
     def __init__(
             self,
-            in_features: int,
-            hidden_features: int,
-            stage: str = "C5",  # Stage from which to take features, e.g., "C5" for ResNet
-            pooling: str = "avg",  # "avg" for GlobalAvgPool2d, "max" for GlobalMaxPool2d
-            num_layers: int = 2,
-            activation: str = "gelu",
-            norm: Union[str, None] = None,
-            dropout: float = 0.0,
-            num_classes: int = 1000
+            in_spec: FeatureSpec,
+            cfg: ClassificationHeadConfig
         ):
         super().__init__()
-        assert pooling in ["avg", "max"], "Pooling must be either 'avg' or 'max'."
-        self.pooling = GlobalAvgPool2d() if pooling == "avg" else GlobalMaxPool2d()
-        self.num_classes = num_classes
+        self.cfg = cfg
+        in_features = in_spec.embed_dim
 
-        self.stage = stage
+        self.num_classes = cfg.num_classes
 
         self.mlp = MLP(
             in_features=in_features,
-            hidden_features=hidden_features,
-            out_features=num_classes,
-            num_layers=num_layers,
-            activation=activation,
-            norm=norm,
-            dropout=dropout
+            hidden_features=cfg.hidden_features,
+            out_features=cfg.num_classes,
+            num_layers=cfg.num_layers,
+            activation=cfg.activation,
+            norm=cfg.norm,
+            dropout=cfg.dropout
         )
 
-    def forward(self, x: Union[BackboneFeatures, NeckFeatures]) -> HeadFeatures:
+    def forward(self, x: FeatureMaps) -> HeadOutput:
         """Forward pass through the classification head.
 
         :param x: Input features from the backbone or neck.
-        :return: HeadFeatures containing logits and predictions.
+        :return: HeadOutput containing logits and predictions.
         """
-        assert isinstance(x, (BackboneFeatures, NeckFeatures)), "Input must be BackboneFeatures or NeckFeatures."
-        assert self.stage in x.feature_maps, f"Stage '{self.stage}' not found in input features. Check the available stages: {list(x.feature_maps.keys())}"
-        features = x.feature_maps[self.stage]  # Example: using the last stage feature map
-
-        features = self.pooling(features)  # Apply global pooling
-
+        features = x.pooled
         logits = self.mlp(features)
-        predictions = torch.softmax(logits, dim=-1)
-        return HeadFeatures(logits=logits, predictions=predictions)
+        return HeadOutput(logits=logits)
 
 
-@register_head
-def vanilla_classification_head(
-        in_features: int,
-        hidden_features: int,
-        stage: str = "C5",
-        pooling: str = "avg",
-        num_layers: int = 2,
-        activation: str = "gelu",
-        norm: Union[str, None] = None,
-        dropout: float = 0.0,
-        num_classes: int = 1000
-    ) -> ClassificationHead:
+classification_head_configs = {
+    "vanilla_classification_head": ClassificationHeadConfig(),
+}
+
+
+@register_head(config=classification_head_configs["vanilla_classification_head"])
+def vanilla_classification_head(in_spec: FeatureSpec, cfg: ClassificationHeadConfig) -> ClassificationHead:
     """
     Factory function to create a vanilla classification head.
 
-    :param in_features: Number of input features from the backbone.
-    :param hidden_features: Number of hidden features in the MLP.
-    :param stage: Stage from which to take features (e.g., "C5").
-    :param pooling: Type of pooling to use ("avg" or "max").
-    :param num_layers: Number of layers in the MLP.
-    :param activation: Activation function to use in the MLP.
-    :param norm: Normalization method to use in the MLP.
-    :param dropout: Dropout rate to use in the MLP.
-    :param num_classes: Number of output classes for classification.
+    :param in_spec: FeatureSpec instance describing the output of a preceeding feature extractor
+    :param cfg: Configuration object for the classification head.
     :return: An instance of ClassificationHead.
     """
-    return ClassificationHead(
-        in_features=in_features,
-        hidden_features=hidden_features,
-        stage=stage,
-        pooling=pooling,
-        num_layers=num_layers,
-        activation=activation,
-        norm=norm,
-        dropout=dropout,
-        num_classes=num_classes
-    )
+    return ClassificationHead(in_spec, cfg)

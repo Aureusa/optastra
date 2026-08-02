@@ -63,6 +63,8 @@ class ComponentRegistry:
         return self._component_to_module[name]
 
     def get_default_config(self, name: str) -> Any:
+        if name not in self._component_entrypoints:
+            raise ValueError(f'{self.component_name} {name} is not registered')
         if name not in self._component_to_default_config:
             raise ValueError(f'{self.component_name} {name} does not have a default config')
         return self._component_to_default_config[name]

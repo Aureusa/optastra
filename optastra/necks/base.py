@@ -31,29 +31,15 @@ class Neck(nn.Module, ABC):
             )
 
     @staticmethod
-    def _validate_in_spec(cfg: Any) -> None:
-        """Validate cfg.in_spec when a neck config carries one."""
-        if not hasattr(cfg, "in_spec"):
-            raise ValueError(
-                f"{cfg.__class__.__name__} must define an 'in_spec' attribute of type FeatureSpec. "
-                "Check docs for details."
-            )
-
-        in_spec = getattr(cfg, "in_spec")
+    def _validate_in_spec(in_spec: Any) -> None:
         if not isinstance(in_spec, FeatureSpec):
-            raise TypeError(
-                f"The provided 'in_spec' must be an instance of FeatureSpec, got {type(in_spec)} instead. "
-                "Check docs for details."
-            )
-
-        in_spec.require("channels", "strides")
+            raise TypeError(f"'in_spec' must be a FeatureSpec, got {type(in_spec)}.")
 
     @classmethod
     def create(
             cls,
             name: str,
-            *,
-            backbone: Optional[Union[nn.Module, None]] = None,
+            in_spec: FeatureSpec,
             **overrides
         ) -> Neck:  # Factory method to create a neck by name
         """Create a neck by name, optionally loading pretrained weights.
@@ -69,28 +55,8 @@ class Neck(nn.Module, ABC):
         if not check_neck_registered(name):  # Ensure the neck is registered
             raise ValueError(f"Neck '{name}' is not registered.")
 
-        if backbone is not None and overrides.get("in_spec") is not None:
-            raise ValueError("Do not provide 'in_spec' when a backbone is given.")
-        
-        if backbone is not None:
-            in_spec = getattr(backbone, "out_spec", None)
-            if in_spec is None:
-                raise ValueError(
-                    "The provided backbone does not have an 'out_spec' attribute."
-                    " There is something wrong with the backbone implementation."
-                )
-            overrides["in_spec"] = in_spec
-            
-        if backbone is None:
-            in_spec = overrides.get("in_spec")
-            if in_spec is None:
-                raise ValueError("Must provide 'in_spec' when no backbone is given.")
-
-        if in_spec is not None and not isinstance(in_spec, FeatureSpec):
-            raise TypeError(
-                f"The provided 'in_spec' must be an instance of FeatureSpec, got {type(in_spec)} instead. "
-                "Check the documentation for details."
-            )
+        # Validate the provided in_spec
+        cls._validate_in_spec(in_spec)
 
         # Get the entrypoint and default configuration for the specified neck
         entrypoint = get_neck_entrypoint(name)
@@ -99,11 +65,8 @@ class Neck(nn.Module, ABC):
         # Replace overrides (raises on unknown fields)
         cfg = replace(default_cfg, **overrides)
 
-        # Validate canonical in_spec fields once in the base factory.
-        cls._validate_in_spec(cfg)
-
         # Create the neck using the entrypoint and validate its out_spec
-        neck = entrypoint(cfg)
+        neck = entrypoint(in_spec, cfg)
         cls._validate_out_spec(neck)
         return neck
 

@@ -16,7 +16,6 @@ __all__ = ["FPN"]
 @dataclass
 class FPNConfig:
     """Config for the FPN neck."""
-    in_spec: FeatureSpec  # e.g. {"C2": 256, "C3": 512, "C4": 1024, "C5": 2048}
     out_channels: int = 256
     preact: bool = False
 
@@ -31,11 +30,13 @@ class FPN(Neck):
 
     def __init__(
         self,
+        in_spec: FeatureSpec,
         cfg: FPNConfig,
     ):
         super().__init__()
         # Unpack the cfg into local variables for convenience
-        in_channels = cfg.in_spec.channels
+        in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
+        in_channels = in_spec.channels
         out_channels = cfg.out_channels
         preact = cfg.preact
 
@@ -95,12 +96,9 @@ class FPN(Neck):
         }
         return FeatureMaps(feature_maps=outputs)
 
+
 fpn_configs = {
     "fpn": FPNConfig(
-        in_spec=FeatureSpec(
-            channels={"C2": 256, "C3": 512, "C4": 1024, "C5": 2048},
-            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
-        ),
         out_channels=256,
         preact=False,
     )
@@ -108,10 +106,11 @@ fpn_configs = {
 
 
 @register_neck(config=fpn_configs["fpn"])
-def fpn(cfg: FPNConfig) -> FPN:
+def fpn(in_spec: FeatureSpec, cfg: FPNConfig) -> FPN:
     """Factory function to create an FPN neck.
 
+    :param in_spec: FeatureSpec instance describing the output of a preceeding feature extractor
     :param cfg: FPNConfig instance containing the configuration for the FPN
     :return: FPN instance
     """
-    return FPN(cfg)
+    return FPN(in_spec, cfg)

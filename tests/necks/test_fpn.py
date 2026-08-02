@@ -25,7 +25,7 @@ def _fpn_inputs() -> FeatureMaps:
 
 
 def test_fpn_forward_shape():
-    neck = Neck.create("fpn", in_spec=_fpn_in_spec())
+    neck = Neck.create("fpn", _fpn_in_spec())
     out = neck(_fpn_inputs())
 
     assert sorted(out.feature_maps.keys()) == ["P2", "P3", "P4", "P5"]
@@ -35,12 +35,12 @@ def test_fpn_forward_shape():
     assert out.feature_maps["P5"].shape == (2, 256, 7, 7)
 
 
-def test_fpn_is_wirable_to_backbone_create_path():
+def test_fpn_wires_with_backbone_features():
     backbone = Backbone.create("resnet50")
     images = torch.randn(2, 3, 224, 224)
     backbone_features = backbone(images)
 
-    neck = Neck.create("fpn", backbone=backbone, out_channels=128)
+    neck = Neck.create("fpn", backbone.out_spec, out_channels=128)
     out = neck(backbone_features)
 
     assert sorted(out.feature_maps.keys()) == ["P2", "P3", "P4", "P5"]
@@ -49,9 +49,3 @@ def test_fpn_is_wirable_to_backbone_create_path():
     assert out.feature_maps["P4"].shape == (2, 128, 14, 14)
     assert out.feature_maps["P5"].shape == (2, 128, 7, 7)
 
-
-def test_fpn_create_rejects_backbone_and_in_spec_together():
-    backbone = Backbone.create("resnet50")
-
-    with pytest.raises(ValueError, match="Do not provide 'in_spec' when a backbone is given"):
-        Neck.create("fpn", backbone=backbone, in_spec=_fpn_in_spec())
