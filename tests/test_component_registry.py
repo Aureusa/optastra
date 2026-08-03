@@ -10,7 +10,7 @@ def test_component_registry_registers_and_lists_components():
     def DummyComponent():
         return "ok"
 
-    assert "DummyComponent" in registry.list()
+    assert "DummyComponent" in registry.list_component()
     assert registry.get_entrypoint("DummyComponent") is DummyComponent
     assert registry.get_module("DummyComponent") == __name__.split('.')[-1]
 
