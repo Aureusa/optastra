@@ -19,6 +19,7 @@ class ClassificationTaskConfig:
 
 class ClassificationTask(Task):
     required_fields = ("logits",) # Ensure that the model output contains 'logits' for classification tasks
+    collate = "dense"
     def __init__(self, cfg: ClassificationTaskConfig = ClassificationTaskConfig()):
         self.cfg = cfg
         self.reduction = cfg.reduction

@@ -25,6 +25,7 @@ class TaskStepOutput:
 
 class Task(ABC):
     required_fields: tuple[str, ...] = ()
+    collate: str = "default_collate"
 
     ##################################
     ######### Factory Part ###########
