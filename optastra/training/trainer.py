@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Iterable, Mapping, Any
+import time
 import torch
 import torch.nn as nn
 from collections.abc import Mapping as MappingABC
@@ -58,6 +59,20 @@ class Trainer:
         for hook in self.hooks:
             getattr(hook, method_name)(self.state)
 
+    def _next_batch(self, data_iter, dataloader):
+        """Returns (batch, new_iter, epoch_advanced) and records data_time --
+        isolated so both train() and evaluate() time fetching identically."""
+        t0 = time.perf_counter()
+        try:
+            batch = next(data_iter)
+            epoch_advanced = False
+        except StopIteration:
+            data_iter = iter(dataloader)
+            batch = next(data_iter)
+            epoch_advanced = True
+        data_time = time.perf_counter() - t0
+        return data_iter, batch, epoch_advanced, data_time
+
     def train(self, dataloader: Iterable[Mapping[str, Any]], max_iter: int) -> None:
         self.state.max_iter = max_iter
         self._run_hooks("before_train")
@@ -69,12 +84,12 @@ class Trainer:
             self.state.iter = self.storage.iter = it
             self._run_hooks("before_step")
 
-            try:
-                batch = next(data_iter)
-            except StopIteration:
-                data_iter = iter(dataloader)
+            step_start = time.perf_counter()
+            data_iter, batch, epoch_advanced, data_time = self._next_batch(data_iter, dataloader)
+            if epoch_advanced:
                 self.state.epoch += 1
-                batch = next(data_iter)
+            self.state.last_data_time = data_time
+            self.storage.put_scalar("data_time", data_time)
 
             batch = self._move_to_device(batch, self.state.device)
 
@@ -84,7 +99,8 @@ class Trainer:
             self.state.optimizer.step()
 
             self.state.last_output = output
-            self.storage.put_scalar("loss", output.loss.item())
+            self.storage.put_scalar("time", time.perf_counter() - step_start)
+            self.storage.put_scalar("total_loss", output.loss.item())
             self.storage.put_scalars(**{k: v.item() for k, v in output.losses.items()})
 
             self._run_hooks("after_step")
@@ -101,9 +117,16 @@ class Trainer:
 
         all_metrics: dict[str, list[float]] = {}
         try:
-            for eval_it, batch in enumerate(dataloader):
+            data_iter = iter(dataloader)
+            eval_it = 0
+            while True:
+                step_start = time.perf_counter()
+                data_iter, batch, epoch_advanced, data_time = self._next_batch(data_iter, dataloader)
+                if epoch_advanced and eval_it > 0:
+                    break  # single full pass over the val set, then stop
                 self.storage.eval_iter = eval_it
                 self._run_hooks("before_eval_step")
+                self.storage.put_scalar("eval_data_time", data_time, axis="eval_iter")
 
                 batch = self._move_to_device(batch, self.state.device)
                 output = self.state.task.run_step(self.state.model, batch, stage="val")
@@ -112,13 +135,14 @@ class Trainer:
                 # per-batch, tagged on the eval axis -- has its own history now
                 self.storage.put_scalars(axis="eval_iter",
                                         **{f"val_step_{k}": v for k, v in output.metrics.items()})
+                self.storage.put_scalar("eval_time", time.perf_counter() - step_start, axis="eval_iter")
 
                 for k, v in output.metrics.items():
                     all_metrics.setdefault(k, []).append(float(v))
                 self._run_hooks("after_eval_step")
+                eval_it += 1
 
             averaged = {k: sum(v) / len(v) for k, v in all_metrics.items()}
-            # summary, tagged on the training axis -- this is what you plot against training progress
             self.storage.put_scalars(axis="iter", **{f"val_{k}": v for k, v in averaged.items()})
             return averaged
         finally:

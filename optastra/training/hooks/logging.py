@@ -8,11 +8,7 @@ class ConsoleLoggerHook(Hook):
         self.log_every = log_every
         self.logger = logging.getLogger("optastra.train")
         self.logger.setLevel(logging.INFO)
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s"))
-            self.logger.addHandler(handler)
-        self.logger.propagate = False
+        self.logger.propagate = True
 
     def after_step(self, state: TrainerState) -> None:
         if state.iter % self.log_every != 0:

@@ -74,11 +74,12 @@ def test_eval_hook_pushes_prefixed_metrics_on_period_and_after_train():
 
     state.iter = 2
     hook.after_step(state)
-    assert state.storage.latest()["val_accuracy"] == 0.8
+    assert "val_accuracy" not in state.storage.latest()
 
-    state.storage.put_scalar("val_accuracy", 0.1)
+    state.storage.put_scalar("loss", 0.1)
     hook.after_train(state)
-    assert state.storage.latest()["val_accuracy"] == 0.8
+    assert "val_accuracy" not in state.storage.latest()
+    assert state.storage.latest()["loss"] == 0.1
 
 
 def test_checkpoint_hook_writes_expected_checkpoint_file(tmp_path):
@@ -95,9 +96,14 @@ def test_checkpoint_hook_writes_expected_checkpoint_file(tmp_path):
 def test_json_writer_hook_appends_metrics_records(tmp_path):
     state = _build_state()
     state.iter = 7
+    state.max_iter = 100
     state.storage.put_scalars(loss=1.23, val_accuracy=0.91)
 
-    hook = JSONWriterHook(output_dir=str(tmp_path), filename="metrics.jsonl")
+    hook = JSONWriterHook(output_dir=str(tmp_path), filename="metrics.jsonl", log_every=5)
+    hook.after_step(state)
+    assert not (tmp_path / "metrics.jsonl").exists()
+
+    state.iter = 10
     hook.after_step(state)
 
     path = tmp_path / "metrics.jsonl"
@@ -105,6 +111,39 @@ def test_json_writer_hook_appends_metrics_records(tmp_path):
     assert len(lines) == 1
 
     record = json.loads(lines[0])
-    assert record["iter"] == 7
+    assert record["iter"] == 10
+    assert record["phase"] == "train"
+    assert record["max_iter"] == 100
+    assert "scalars" in record
     assert record["loss"] == 1.23
     assert record["val_accuracy"] == 0.91
+
+
+def test_json_writer_hook_writes_eval_record_without_loss_like_metrics(tmp_path):
+    state = _build_state()
+    state.iter = 10
+    state.max_iter = 100
+    state.storage.eval_iter = 0
+    state.storage.max_eval_iter = 2
+    state.storage.put_scalars(axis="eval_iter", val_step_accuracy=0.8, val_step_loss=0.2, eval_time=0.01, eval_data_time=0.001)
+
+    hook = JSONWriterHook(output_dir=str(tmp_path), filename="metrics.jsonl", log_every=5)
+    state.storage.eval_iter = 1
+    hook.after_eval_step(state)
+    assert not (tmp_path / "metrics.jsonl").exists()
+
+    state.storage.eval_iter = 5
+    state.storage.put_scalars(axis="eval_iter", val_step_accuracy=0.8, val_step_loss=0.2, eval_time=0.01, eval_data_time=0.001)
+    hook.after_eval_step(state)
+
+    path = tmp_path / "metrics.jsonl"
+    lines = path.read_text().strip().splitlines()
+    assert len(lines) == 1
+
+    record = json.loads(lines[0])
+    assert record["phase"] == "eval"
+    assert record["iter"] == 10
+    assert record["eval_iter"] == 6
+    assert record["max_eval_iter"] == 2
+    assert "val_step_accuracy" in record["metrics"]
+    assert "val_step_loss" not in record["metrics"]

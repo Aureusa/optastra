@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 from collections import defaultdict, deque
 from typing import Any
 
@@ -8,8 +9,8 @@ class EventStorage:
     Generic scalar/metric bus. Hooks read from here keeping hooks decoupled
     from any particular Task's output shape. Anything (loss, lr, grad norm, custom metric)
     is just a named scalar with a history.
-    This is a simplified version of Detectron2's EventStorage.
-
+    
+    Inspired by Detectron2:
     @misc{wu2019detectron2,
     author =       {Yuxin Wu and Alexander Kirillov and Francisco Massa and
                     Wan-Yen Lo and Ross Girshick},
@@ -37,6 +38,9 @@ class EventStorage:
         self._history[name].append((tag, value))
         self._latest[name] = (tag, value)
 
+    def keys(self) -> list[str]:
+        return list(self._history.keys())
+
     def put_scalars(self, *, axis: str = "iter", **kwargs: float) -> None:
         for name, value in kwargs.items():
             self.put_scalar(name, value, axis=axis)
@@ -54,3 +58,20 @@ class EventStorage:
 
     def history(self, name: str) -> list[tuple[int, float]]:
         return list(self._history[name])
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "_history": copy.deepcopy(self._history),
+            "_latest": copy.deepcopy(self._latest),
+            "iter": self.iter,
+            "eval_iter": self.eval_iter,
+            "max_eval_iter": self.max_eval_iter,
+        }
+
+    def restore(self, snapshot: dict[str, Any]) -> None:
+        self._history = snapshot["_history"]
+        self._latest = snapshot["_latest"]
+        self.iter = snapshot["iter"]
+        self.eval_iter = snapshot["eval_iter"]
+        self.max_eval_iter = snapshot["max_eval_iter"]
+        

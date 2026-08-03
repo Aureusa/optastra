@@ -25,22 +25,22 @@ class EvalHook(Hook):
         self.eval_after_train = eval_after_train
         self.logger = logging.getLogger("optastra.eval")
         self.logger.setLevel(logging.INFO)
-
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s"))
-            self.logger.addHandler(handler)
-
-        self.logger.propagate = False
+        self.logger.propagate = True
 
     def _do_eval(self, state: TrainerState) -> None:
-        metrics = self.eval_fn()
-        state.storage.put_scalars(**{f"{self.prefix}_{k}": v for k, v in metrics.items()})
-        if metrics:
-            metrics_str = "  ".join(f"{self.prefix}_{k}={v:.4f}" for k, v in metrics.items())
-            self.logger.info(f"eval at iter {state.iter}/{state.max_iter}  {metrics_str}")
-        else:
-            self.logger.info(f"eval at iter {state.iter}/{state.max_iter} produced no metrics")
+        storage_snapshot = state.storage.snapshot()
+        last_output = state.last_output
+        try:
+            metrics = self.eval_fn()
+            state.storage.put_scalars(**{f"{self.prefix}_{k}": v for k, v in metrics.items()})
+            if metrics:
+                metrics_str = "  ".join(f"{self.prefix}_{k}={v:.4f}" for k, v in metrics.items())
+                self.logger.info(f"eval at iter {state.iter}/{state.max_iter}  {metrics_str}")
+            else:
+                self.logger.info(f"eval at iter {state.iter}/{state.max_iter} produced no metrics")
+        finally:
+            state.storage.restore(storage_snapshot)
+            state.last_output = last_output
 
     def after_step(self, state: TrainerState) -> None:
         # Fire at iter 200, 400, ... for eval_period=200 and skip iter 0.

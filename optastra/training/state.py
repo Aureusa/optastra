@@ -1,8 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
-import torch.nn as nn
 import torch
+import torch.nn as nn
 
 from ..tasks.base import Task, TaskStepOutput
 from .storage import EventStorage
@@ -18,6 +18,9 @@ class TrainerState:
     iter: int = 0
     epoch: int = 0
     max_iter: int = 0
+    eval_iter: int = 0
+    max_eval_iter: int = 0
     last_output: TaskStepOutput | None = None
-    should_stop: bool = False   # hooks (e.g. EarlyStopping) flip this
+    last_data_time: float = 0.0
+    should_stop: bool = False
     
