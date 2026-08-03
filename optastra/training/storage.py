@@ -24,26 +24,33 @@ class EventStorage:
         self._history: dict[str, deque[tuple[int, float]]] = defaultdict(
             lambda: deque(maxlen=self.window_size)
         )
-        self._latest: dict[str, float] = {}
-        self.iter: int = start_iter
+        self._latest: dict[str, tuple[int, float]] = {}
+        self.iter: int = start_iter        # training step counter
+        self.eval_iter: int = 0            # eval batch counter, resets each eval() call
+        self.max_eval_iter = 0  # max eval batch counter, set at start of each eval() call
 
-    def put_scalar(self, name: str, value: float) -> None:
+    def put_scalar(self, name: str, value: float, *, axis: str = "iter") -> None:
+        """axis='iter' -> tag with training step (default, for train/summary metrics).
+        axis='eval_iter' -> tag with eval-batch index (for per-batch eval metrics)."""
         value = float(value)
-        self._history[name].append((self.iter, value))
-        self._latest[name] = value
+        tag = self.iter if axis == "iter" else self.eval_iter
+        self._history[name].append((tag, value))
+        self._latest[name] = (tag, value)
 
-    def put_scalars(self, **kwargs: float) -> None:
+    def put_scalars(self, *, axis: str = "iter", **kwargs: float) -> None:
         for name, value in kwargs.items():
-            self.put_scalar(name, value)
+            self.put_scalar(name, value, axis=axis)
 
     def latest(self) -> dict[str, float]:
-        return dict(self._latest)
+        return {k: v for k, (_, v) in self._latest.items()}
+
+    def latest_fresh(self, max_age: int = 0, *, axis: str = "iter") -> dict[str, float]:
+        now = self.iter if axis == "iter" else self.eval_iter
+        return {k: v for k, (tag, v) in self._latest.items() if now - tag <= max_age}
 
     def smoothed(self, name: str) -> float:
-        """Windowed average -- smooths noisy per-step values for logging."""
         vals = [v for _, v in self._history[name]]
         return sum(vals) / len(vals) if vals else float("nan")
 
     def history(self, name: str) -> list[tuple[int, float]]:
         return list(self._history[name])
-    

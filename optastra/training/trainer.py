@@ -94,12 +94,34 @@ class Trainer:
     @torch.no_grad()
     def evaluate(self, dataloader: Iterable[Mapping[str, Any]]) -> dict[str, float]:
         self.state.model.eval()
+        self.storage.eval_iter = 0
+        max_eval_iter = len(dataloader)
+        self.storage.max_eval_iter = max_eval_iter
+        self._run_hooks("before_eval")
+
         all_metrics: dict[str, list[float]] = {}
-        for batch in dataloader:
-            batch = self._move_to_device(batch, self.state.device)
-            output = self.state.task.run_step(self.state.model, batch, stage="val")
-            for k, v in output.metrics.items():
-                all_metrics.setdefault(k, []).append(float(v))
-        self.state.model.train()
-        return {k: sum(v) / len(v) for k, v in all_metrics.items()}
-    
+        try:
+            for eval_it, batch in enumerate(dataloader):
+                self.storage.eval_iter = eval_it
+                self._run_hooks("before_eval_step")
+
+                batch = self._move_to_device(batch, self.state.device)
+                output = self.state.task.run_step(self.state.model, batch, stage="val")
+                self.state.last_output = output
+
+                # per-batch, tagged on the eval axis -- has its own history now
+                self.storage.put_scalars(axis="eval_iter",
+                                        **{f"val_step_{k}": v for k, v in output.metrics.items()})
+
+                for k, v in output.metrics.items():
+                    all_metrics.setdefault(k, []).append(float(v))
+                self._run_hooks("after_eval_step")
+
+            averaged = {k: sum(v) / len(v) for k, v in all_metrics.items()}
+            # summary, tagged on the training axis -- this is what you plot against training progress
+            self.storage.put_scalars(axis="iter", **{f"val_{k}": v for k, v in averaged.items()})
+            return averaged
+        finally:
+            self._run_hooks("after_eval")
+            self.state.model.train()
+        

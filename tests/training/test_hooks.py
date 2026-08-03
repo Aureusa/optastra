@@ -64,6 +64,7 @@ def test_ema_hook_updates_teacher_parameters():
 
 def test_eval_hook_pushes_prefixed_metrics_on_period_and_after_train():
     state = _build_state()
+    state.max_iter = 10
 
     hook = EvalHook(eval_period=2, eval_fn=lambda: {"accuracy": 0.8}, prefix="val")
 

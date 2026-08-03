@@ -21,6 +21,23 @@ class _EvalOnlyTask:
         return TaskStepOutput(loss=loss, losses={"mse": loss})
 
 
+class _RecorderHook:
+    def __init__(self):
+        self.events = []
+
+    def before_eval(self, state):
+        self.events.append(("before_eval", state.iter))
+
+    def after_eval(self, state):
+        self.events.append(("after_eval", state.iter))
+
+    def before_eval_step(self, state):
+        self.events.append(("before_eval_step", state.iter))
+
+    def after_eval_step(self, state):
+        self.events.append(("after_eval_step", state.iter))
+
+
 def test_resolve_device_cpu_is_supported():
     resolved = Trainer._resolve_device("cpu")
     assert resolved.type == "cpu"
@@ -63,3 +80,23 @@ def test_evaluate_averages_metrics_over_batches():
 
     # Mean of batch means: ((1+3)/2 + (5+7)/2) / 2 = (2 + 6) / 2 = 4
     assert metrics["mae"] == pytest.approx(4.0)
+
+
+def test_evaluate_runs_eval_lifecycle_hooks():
+    model = nn.Linear(4, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    recorder = _RecorderHook()
+    trainer = Trainer(model=model, task=_EvalOnlyTask(), optimizer=optimizer, hooks=[recorder], device="cpu")
+
+    dataloader = [
+        {"inputs": torch.randn(2, 4), "targets": torch.tensor([[1.0], [3.0]])},
+    ]
+
+    trainer.evaluate(dataloader)
+
+    assert recorder.events == [
+        ("before_eval", 0),
+        ("before_eval_step", 0),
+        ("after_eval_step", 0),
+        ("after_eval", 0),
+    ]
