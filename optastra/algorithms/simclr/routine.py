@@ -1,7 +1,7 @@
 import torch, torch.nn.functional as F
 from dataclasses import dataclass
 from ..base import Algorithm
-from .._registry import register_algorithm
+from ...tasks._registry import register_task
 
 
 __all__ = ["SimCLRTask"]
@@ -40,6 +40,6 @@ class SimCLRTask(Algorithm):
         return losses["nt_xent_loss"]
 
 
-@register_algorithm(config=SimCLRConfig())
+@register_task(config=SimCLRConfig())
 def simclr_no_momentum(cfg: SimCLRConfig) -> SimCLRTask:
     return SimCLRTask(cfg)

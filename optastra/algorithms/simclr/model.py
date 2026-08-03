@@ -3,6 +3,9 @@ from ...backbones.base import Backbone
 from ...necks.base import Neck
 
 
+__all__ = ["SimCLRModel"]
+
+
 class SimCLRModel(nn.Module):
     """Backbone + optional neck + projection head. The projector is
     algorithm-specific -- it doesn't belong in the shared heads/ registry
