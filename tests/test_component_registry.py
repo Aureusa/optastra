@@ -1,6 +1,6 @@
 import pytest
 
-from optastra.registry import ComponentRegistry
+from optastra.core.registry import ComponentRegistry
 
 
 def test_component_registry_registers_and_lists_components():

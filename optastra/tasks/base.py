@@ -3,8 +3,9 @@ from dataclasses import dataclass, field, replace, fields
 from typing import Any, Mapping, Literal
 import torch
 
-from ._registry import get_task_entrypoint, get_task_default_config, list_tasks, check_task_registered, get_task_module
+from ._registry import _registry
 from ..nn.features import HeadOutput
+from ..core.factory import Factory
 
 
 __all__ = ["Task", "TaskStepOutput", "Stage"]
@@ -23,80 +24,10 @@ class TaskStepOutput:
     targets: Any = None             # preprocessed targets, optional
 
 
-class Task(ABC):
+class Task(ABC, Factory["Task"]):
     required_fields: tuple[str, ...] = ()
     collate: str = "default_collate"
-
-    ##################################
-    ######### Factory Part ###########
-    ##################################
-    @classmethod
-    def create(
-            cls,
-            name: str,
-            **overrides
-        ) -> "Task":  # Factory method to create a task by name
-        """Create a task by name, optionally loading pretrained weights.
-
-        :param name: Name of the task to create.
-        :param backbone: Optional backbone module to infer the input feature specification from.
-        If provided, the task will use the backbone's output feature specification as its
-        input feature specification. If not provided, the user must provide an 'in_spec'
-        override in the keyword arguments.
-        :param overrides: Optional keyword arguments to overwrite the default configuration.
-        :return: An instance of the task.
-        """
-        if not check_task_registered(name):  # Ensure the task is registered
-            raise ValueError(f"task '{name}' is not registered.")
-
-        # Get the entrypoint and default configuration for the specified task
-        entrypoint = get_task_entrypoint(name)
-        default_cfg = get_task_default_config(name)
-
-        # Replace overrides (raises on unknown fields)
-        cfg = replace(default_cfg, **overrides) if default_cfg is not None else None
-
-        # Create the task using the entrypoint and validate its out_spec
-        task = entrypoint(cfg) if cfg is not None else entrypoint()
-        return task
-
-    @classmethod
-    def describe(cls, name: str) -> dict[str, int]: # Factory method to describe a task by name
-        """
-        Describe a task by name, returning its out_channels and out_strides.
-
-        :param name: Name of the task to describe.
-        :return: A dictionary containing the out_channels and out_strides of the task.
-        """
-        cfg = get_task_default_config(name)
-        print(f"{name}:")
-        for f in fields(cfg):
-            current = getattr(cfg, f.name)
-            print(f"  {f.name}: {f.type}  = {current!r}")
-
-    @classmethod
-    def config(cls, name: str) -> Any: # Factory method to get the default config of a backbone by name
-        """Get the default configuration for a task by name.
-
-        :param name: Name of the task to get the configuration for.
-        :return: The default configuration of the task.
-        """
-        return get_task_default_config(name)
-
-    @classmethod
-    def list_tasks(cls, module: str | None = None, filter: str | None = None) -> list[str]: # Factory method to list all registered backbones
-        """
-        List all registered tasks, optionally filtered by module and/or a wildcard pattern.
-
-        :param module: Optional module name to filter the tasks by.
-        :param filter: Optional wildcard pattern to filter the tasks by.
-        :return: A list of registered task names.
-        """
-        return list_tasks(module=module, filter=filter)
-
-    ##################################
-    ########### Task Part ############
-    ##################################
+    _registry = _registry
     
     def run_step(self, model, batch: Mapping[str, Any], stage: Stage = "train") -> TaskStepOutput:
         self.validate_batch(batch, stage)

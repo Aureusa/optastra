@@ -6,86 +6,28 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from ._registry import (
-    get_backbone_entrypoint,
-    get_backbone_default_config,
-    list_backbones,
-    check_backbone_registered
-)
+from ._registry import _registry
+from ..core.factory import Factory
 from ..nn.features import FeatureMaps, FeatureSpec
 
 
 __all__ = ["Backbone"]
 
 
-class Backbone(nn.Module, ABC):
+class Backbone(nn.Module, Factory["Backbone"], ABC):
     """A backbone only produces features -- it knows nothing about tasks."""
 
     out_spec: FeatureSpec  # type: ignore
+    _registry = _registry
 
-    @staticmethod
-    def _validate_out_spec(backbone: "Backbone") -> None:
+    @classmethod
+    def _post_create(cls, backbone: "Backbone") -> "Backbone":
         """Ensure every created backbone exposes a valid FeatureSpec."""
         if not isinstance(backbone.out_spec, FeatureSpec):
             raise ValueError(
                 f"{backbone.__class__.__name__} must define an 'out_spec' attribute of type FeatureSpec. Check docs for details."
             )
-
-    @classmethod
-    def create(cls, name: str, **overrides) -> Backbone:  # Factory method to create a backbone by name
-        """Create a backbone by name, optionally loading pretrained weights.
-
-        :param name: Name of the backbone to create.
-        :param overrides: Optional keyword arguments to overwrite the default configuration.
-        :return: An instance of the backbone.
-        """
-        if not check_backbone_registered(name):  # Ensure the backbone is registered
-            raise ValueError(f"Backbone '{name}' is not registered.")
-
-        # Get the entrypoint and default configuration for the specified backbone
-        entrypoint = get_backbone_entrypoint(name)
-        default_cfg = get_backbone_default_config(name)
-
-        # Replace overrides (raises on unknown fields)
-        cfg = replace(default_cfg, **overrides)
-
-        # Create the backbone using the entrypoint and validate its out_spec
-        backbone = entrypoint(cfg)
-        cls._validate_out_spec(backbone)
         return backbone
-
-    @classmethod
-    def describe(cls, name: str) -> dict[str, int]: # Factory method to describe a backbone by name
-        """Describe a backbone by name, returning its out_channels and out_strides.
-
-        :param name: Name of the backbone to describe.
-        :return: A dictionary containing the out_channels and out_strides of the backbone.
-        """
-        cfg = get_backbone_default_config(name)
-        print(f"{name}:")
-        for f in fields(cfg):
-            current = getattr(cfg, f.name)
-            print(f"  {f.name}: {f.type}  = {current!r}")
-
-    @classmethod
-    def config(cls, name: str) -> Any: # Factory method to get the default config of a backbone by name
-        """Get the default configuration for a backbone by name.
-
-        :param name: Name of the backbone to get the configuration for.
-        :return: The default configuration of the backbone.
-        """
-        return get_backbone_default_config(name)
-
-    @classmethod
-    def list_backbones(cls, module: str | None = None, filter: str | None = None) -> list[str]: # Factory method to list all registered backbones
-        """
-        List all registered backbones, optionally filtered by module and/or a wildcard pattern.
-
-        :param module: Optional module name to filter the backbones by.
-        :param filter: Optional wildcard pattern to filter the backbones by.
-        :return: A list of registered backbone names.
-        """
-        return list_backbones(module=module, filter=filter)
 
     def forward(self, images: torch.Tensor) -> FeatureMaps:
         raise NotImplementedError

@@ -1,15 +1,8 @@
 import pytest
 
 from optastra.optim._registry import (
-    check_optimizer_registered,
-    check_scheduler_registered,
-    get_optimizer_default_config,
-    get_optimizer_entrypoint,
-    get_optimizer_module,
-    get_scheduler_default_config,
-    get_scheduler_entrypoint,
-    list_optimizers,
-    list_schedulers,
+    _registry,
+    _scheduler_registry,
     register_optimizer,
     register_scheduler,
 )
@@ -20,10 +13,10 @@ def test_optimizer_registry_registers_and_lists_components():
     def UnitTestOptimizerRegistryFn(param_groups, cfg):
         return (param_groups, cfg)
 
-    assert "UnitTestOptimizerRegistryFn" in list_optimizers()
-    assert get_optimizer_entrypoint("UnitTestOptimizerRegistryFn") is UnitTestOptimizerRegistryFn
-    assert get_optimizer_module("UnitTestOptimizerRegistryFn") == __name__.split(".")[-1]
-    assert check_optimizer_registered("UnitTestOptimizerRegistryFn") is True
+    assert "UnitTestOptimizerRegistryFn" in _registry.list_component()
+    assert _registry.get_entrypoint("UnitTestOptimizerRegistryFn") is UnitTestOptimizerRegistryFn
+    assert _registry.get_module("UnitTestOptimizerRegistryFn") == __name__.split(".")[-1]
+    assert _registry.is_registered("UnitTestOptimizerRegistryFn") is True
 
 
 def test_optimizer_registry_default_config_and_duplicate_rejection():
@@ -33,7 +26,7 @@ def test_optimizer_registry_default_config_and_duplicate_rejection():
     def UnitTestOptimizerWithConfig(param_groups, cfg):
         return (param_groups, cfg)
 
-    assert get_optimizer_default_config("UnitTestOptimizerWithConfig") == cfg
+    assert _registry.get_default_config("UnitTestOptimizerWithConfig") == cfg
 
     with pytest.raises(ValueError, match="optimizer UnitTestOptimizerWithConfig already registered"):
         @register_optimizer(config=cfg)
@@ -46,9 +39,9 @@ def test_scheduler_registry_registers_and_lists_components():
     def UnitTestSchedulerRegistryFn(optimizer, cfg):
         return (optimizer, cfg)
 
-    assert "UnitTestSchedulerRegistryFn" in list_schedulers()
-    assert get_scheduler_entrypoint("UnitTestSchedulerRegistryFn") is UnitTestSchedulerRegistryFn
-    assert check_scheduler_registered("UnitTestSchedulerRegistryFn") is True
+    assert "UnitTestSchedulerRegistryFn" in _scheduler_registry.list_component()
+    assert _scheduler_registry.get_entrypoint("UnitTestSchedulerRegistryFn") is UnitTestSchedulerRegistryFn
+    assert _scheduler_registry.is_registered("UnitTestSchedulerRegistryFn") is True
 
 
 def test_scheduler_registry_default_config_and_duplicate_rejection():
@@ -58,7 +51,7 @@ def test_scheduler_registry_default_config_and_duplicate_rejection():
     def UnitTestSchedulerWithConfig(optimizer, cfg):
         return (optimizer, cfg)
 
-    assert get_scheduler_default_config("UnitTestSchedulerWithConfig") == cfg
+    assert _scheduler_registry.get_default_config("UnitTestSchedulerWithConfig") == cfg
 
     with pytest.raises(ValueError, match="scheduler UnitTestSchedulerWithConfig already registered"):
         @register_scheduler(config=cfg)

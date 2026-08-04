@@ -39,6 +39,17 @@ class ComponentRegistry:
             self._component_to_default_config[component_name] = default_config
         return fn
 
+    def make_decorator(self):
+        """
+        Returns a register-style decorator bound to this registry,
+        supporting both @register_x and @register_x(config=...).
+        """
+        def register(fn=None, *, config=None):
+            def decorator(inner_fn):
+                return self.register(inner_fn, default_config=config)
+            return decorator(fn) if fn is not None else decorator
+        return register
+
     def list_component(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
         if module is not None:
             components = list(self._module_to_components.get(module, []))

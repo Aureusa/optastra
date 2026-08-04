@@ -1,6 +1,7 @@
 # optastra/nn/features.py
 from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import Any
 import torch
 
 __all__ = ["FeatureMaps", "FeatureSpec", "HeadOutput"]
@@ -13,6 +14,7 @@ class FeatureMaps:
     pooled: torch.Tensor | None = None
     patch_tokens: torch.Tensor | None = None
     cls_token: torch.Tensor | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

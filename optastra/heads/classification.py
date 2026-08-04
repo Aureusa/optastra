@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-
-import torch
 from typing import Union
 
 from .base import Head

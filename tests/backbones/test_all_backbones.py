@@ -3,7 +3,7 @@ from optastra.backbones import Backbone
 
 
 def test_all_registered_backbones_initialization():
-    backbones = Backbone.list_backbones()
+    backbones = Backbone.list_all()
 
     for backbone_name in backbones:
         model = Backbone.create(backbone_name)

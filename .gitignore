@@ -1,2 +1,5 @@
 .pytest*
 __pycache__/
+runs/
+*.log
+*.json

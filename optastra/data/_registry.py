@@ -1,6 +1,6 @@
 from typing import Any, Callable, List, Optional
 
-from optastra.registry import ComponentRegistry
+from optastra.core.registry import ComponentRegistry
 
 
 _registry = ComponentRegistry("collate")

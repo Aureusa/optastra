@@ -12,7 +12,7 @@ def _fpn_in_spec() -> FeatureSpec:
 
 
 def test_all_registered_necks_initialization():
-    necks = Neck.list_necks()
+    necks = Neck.list_all()
 
     for neck_name in necks:
         model = Neck.create(neck_name, _fpn_in_spec())
