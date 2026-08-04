@@ -1,6 +1,36 @@
-from ._registry import register_collate
 from torch.utils.data._utils.collate import default_collate as torch_default_collate
+
 from .sample import Sample
+from optastra.core.registry import ComponentRegistry
+from optastra.core.factory import Factory
+
+
+__all__ = ["CollateFn"]
+
+
+class CollateFn(Factory["CollateFn"]):
+    """
+    Registry for collate functions. Collate functions are used to combine a list of samples into a batch.
+    """
+
+    _registry = ComponentRegistry("collate")
+
+    @classmethod
+    def create(cls, name: str, **kwargs) -> "CollateFn":
+        """
+        Create a collate function by name.
+        """
+        return cls._registry.get_entrypoint(name, **kwargs)
+
+    @classmethod
+    def make_decorator(cls):
+        """
+        Returns a decorator that registers a collate function with the registry.
+        """
+        return cls._registry.make_decorator()
+
+
+register_collate = CollateFn.make_decorator()
 
 
 @register_collate
