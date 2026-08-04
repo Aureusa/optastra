@@ -4,22 +4,31 @@
 
 ## Motivation
 
-The idea for this project came out of my interest in computer vision primarily due to the fact that most of my research is centered around computer vision in application to astronomy. The problem arrises from the fact that most computer vision frameworks are either:
-* research code tied to a single paper,
-* deployment-focused,
-* or large monolithic ecosystems that are difficult to extend.
+The idea for this project grew out of my work in computer vision for astronomy. While there are many excellent computer vision frameworks available, they generally fall into one of three categories:
 
-The most prevalent framework for doing CV in Astronomy is [ZooBot](https://github.com/mwalmsley/zoobot), which solves an important problem -- namely that astronomers are often not computer vision experts. Thus, the design strategy of ZooBot is centered around making things easy for non-experts. Swap a few final layers, train on your data, and get your model. It also allows loading pretrained models from huggingface, and uses the [`timm`](https://github.com/huggingface/pytorch-image-models) library for model implementation, which can then be finetuned on a specific use case.
+- research code accompanying a single paper,
+- deployment-oriented libraries,
+- or large ecosystems that prioritize stability over rapid experimentation.
 
-Of course this is of great advantage to most astronomers as they don't have to implement complex models themselves, hack up some pre-training routine, and so on. However, this results in a framework that is not very flexible. It is constrained to the architectures implemented in `timm` (which granted are a lot), and is difficult to implement new (or any) pretraining methods. Another issue is that astronomers sometimes forget that the pretrained models they are using might have been pretrained on data that is very different from their own. For example, a model pretrained on `Galaxy Zoo Hubble and CANDELS` may not perform well on astronomical images from `Euclid` due to different noise characteristics, different resolutions, and different data distributions. This is not necessarily a fault of the astronomers using the framework, but rather a design choice of the framework itself -- which inexperienced non-experts in the field of CV can easily miss.
+For astronomy, one of the most widely used frameworks is [ZooBot](https://github.com/mwalmsley/zoobot). ZooBot addresses an important problem: most astronomers are not computer vision experts. Its design therefore emphasizes ease of use. Users can select a pretrained backbone, replace the task-specific prediction head, fine-tune on their own data, and obtain a competitive model with relatively little effort. This significantly lowers the barrier to applying deep learning to astronomical datasets and has in turn advanced the field significantly.
 
-The data distribution of astronomical images is often very different depending on the survey. The ability to pretrain models on new data is important. Other libraries such as `timm`, `torchvision`, `ZooBot`, etc., are not designed for this. This is a problem that needs to be solved in order to make computer vision more accessible both for astronomers and for other researchers working with specialized datasets.
+However, this design also comes with trade-offs. ZooBot is primarily intended for downstream fine-tuning rather than developing new computer vision methods. It builds upon the excellent [`timm`](https://github.com/huggingface/pytorch-image-models) (PyTorch Image Models) library, making it straightforward to reuse existing architectures but comparatively cumbersome to introduce entirely new architectures, training paradigms, or pretraining strategies.
 
-This project aims to be different!
+This distinction is particularly important in astronomy because datasets from different surveys often exhibit substantial domain shifts. Images often differ in wavelength, spatial resolution, point spread function, noise characteristics, and preprocessing pipelines. Consequently, representations learned on one survey do not necessarily transfer well to another. For example, a model pretrained on **Galaxy Zoo Hubble** or **CANDELS** may not transfer optimally to **Euclid** imagery without further adaptation.
 
-It is intended to become a framework where implementing new vision architectures, experimenting with new pretraining methods, and assembling models from reusable components is straightforward.
+While fine-tuning pretrained models is often sufficient, there are many situations where pretraining directly on survey-specific data—or experimenting with entirely new self-supervised learning methods—is desirable. However, existing frameworks are not designed to facilitate this kind of experimentation.
 
-Although motivated by astronomy, the framework is **general-purpose** and should be useful for any computer vision research.
+Existing libraries such as `timm` and `torchvision` provide outstanding implementations of modern vision architectures, but they are intentionally general-purpose libraries rather than research frameworks for rapidly prototyping new models and pretraining algorithms. Likewise, astronomy-focused frameworks such as ZooBot prioritize accessibility for downstream users over flexibility for computer vision research.
+
+## Goal
+
+This project aims to fill that gap.
+
+Its goal is to provide a modular, research-oriented computer vision framework in which implementing new architectures, experimenting with novel pretraining methods, and assembling models from reusable components is straightforward.
+
+Rather than treating architectures and training pipelines as fixed entities, the framework encourages composing models from interchangeable building blocks. The focus is on making research fast: new ideas should require implementing only the novel components, not rewriting an entire training stack.
+
+Although motivated by astronomical applications, the framework is **general-purpose** and is intended to be useful for computer vision research on any specialized imaging dataset.
 
 ---
 
