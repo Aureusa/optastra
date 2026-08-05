@@ -10,8 +10,13 @@ class SGDConfig:
     weight_decay: float = 1e-4
     nesterov: bool = True
 
+
+class SGD(optim.SGD):
+    def __init__(self, param_groups, cfg: SGDConfig):
+        super().__init__(param_groups, lr=cfg.lr, momentum=cfg.momentum,
+                         weight_decay=cfg.weight_decay, nesterov=cfg.nesterov)
+
 @register_optimizer(config=SGDConfig())
-def sgd(param_groups, cfg: SGDConfig) -> optim.SGD:
-    return optim.SGD(param_groups, lr=cfg.lr, momentum=cfg.momentum,
-                      weight_decay=cfg.weight_decay, nesterov=cfg.nesterov)
+def sgd(param_groups, cfg: SGDConfig) -> SGD:
+    return SGD(param_groups, cfg)
 

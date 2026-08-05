@@ -22,6 +22,7 @@ class MaskRCNNHeadConfig:
 class MaskRCNNHead(Head):
     def __init__(self, in_spec: FeatureSpec, cfg: MaskRCNNHeadConfig):
         super().__init__()
+        self.cfg = cfg
         in_spec.require("channels")
         if "roi" not in in_spec.channels:
             raise ValueError("MaskRCNNHead requires 'roi' feature maps in the input spec.")

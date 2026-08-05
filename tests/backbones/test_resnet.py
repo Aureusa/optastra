@@ -45,10 +45,10 @@ def test_resnet_create_with_unknown_override_raises_type_error():
 
 
 def test_resnet_create_override_does_not_mutate_default_config():
-    default_cfg = Backbone.config("resnet18")
+    default_cfg = Backbone.get_default_config("resnet18")
     assert default_cfg.in_channels == 3
 
     _ = Backbone.create("resnet18", in_channels=1)
 
     # dataclasses.replace should create a new config object and keep registry defaults intact
-    assert Backbone.config("resnet18").in_channels == 3
+    assert Backbone.get_default_config("resnet18").in_channels == 3

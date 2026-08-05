@@ -30,10 +30,10 @@ def test_alexnet_create_with_unknown_override_raises_type_error():
 
 
 def test_alexnet_create_override_does_not_mutate_default_config():
-    default_cfg = Backbone.config("alexnet")
+    default_cfg = Backbone.get_default_config("alexnet")
     assert default_cfg.in_channels == 3
     assert default_cfg.channels == [96, 256, 384, 256, 256]
 
     _ = Backbone.create("alexnet", in_channels=1)
 
-    assert Backbone.config("alexnet").in_channels == 3
+    assert Backbone.get_default_config("alexnet").in_channels == 3

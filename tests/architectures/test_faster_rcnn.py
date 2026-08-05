@@ -1,17 +1,18 @@
 import torch
-import pytest
 
+from optastra.core.component_ref import ComponentRef
 from optastra.architectures import Architecture
 from optastra.architectures.faster_rcnn import FasterRCNN
+from optastra.nn.features import FeatureMaps
 
 
 def test_faster_rcnn_forward_returns_head_output_and_rpn_maps():
     model = Architecture.create(
         "faster_rcnn_r18_fpn",
         num_classes=6,
-        head_overrides={"hidden_features": 64, "num_layers": 2},
-        proposal_generator_overrides={"num_anchors": 3},
-        region_extractor_overrides={"stage": "P2", "output_size": 7},
+        proposal_generator=ComponentRef("rpn", {"anchor_scales": (0.5,), "aspect_ratios": [0.5, 1.0, 2.0]}),
+        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
+        roi_box_head=ComponentRef("roi_box_head", {"fc_hidden_features": 64})
     )
 
     images = torch.randn(2, 3, 128, 128)
@@ -26,24 +27,28 @@ def test_faster_rcnn_forward_returns_head_output_and_rpn_maps():
 
     out = model(images, rois)
 
-    assert out.logits.shape == (3, 6)
+    assert out.logits.shape == (3, 7)
     assert out.values.shape == (3, 4)
     assert "rpn" in out.extra
-    assert "P2_objectness" in out.extra["rpn"]
-    assert "P2_deltas" in out.extra["rpn"]
+    assert isinstance(out.extra["rpn"], FeatureMaps)
+    assert "P2_objectness" in out.extra["rpn"].feature_maps
+    assert "P2_deltas" in out.extra["rpn"].feature_maps
+    assert "roi_boxes" in out.extra
 
 
-def test_faster_rcnn_raises_without_rois_or_proposals():
+def test_faster_rcnn_generates_proposals_when_rois_are_not_given():
     model = Architecture.create(
         "faster_rcnn_r18_fpn",
         num_classes=3,
-        region_extractor_overrides={"stage": "P2", "output_size": 7},
+        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
     )
 
     images = torch.randn(2, 3, 128, 128)
+    out = model(images)
 
-    with pytest.raises(ValueError, match="requires proposal boxes"):
-        model(images)
+    assert out.logits is not None
+    assert out.values is not None
+    assert out.extra["roi_boxes"].shape[1] == 5
 
 
 def test_registered_c5_variant_builds_without_fpn():

@@ -23,7 +23,7 @@ def _fpn_inputs() -> FeatureMaps:
 
 
 def test_neck_config_returns_fpn_default_config():
-    cfg = Neck.config("fpn")
+    cfg = Neck.get_default_config("fpn")
 
     assert cfg.out_channels == 256
     assert cfg.preact is False

@@ -49,3 +49,17 @@ def test_fpn_wires_with_backbone_features():
     assert out.feature_maps["P4"].shape == (2, 128, 14, 14)
     assert out.feature_maps["P5"].shape == (2, 128, 7, 7)
 
+
+def test_fpn_handles_backbone_features_from_odd_input_sizes():
+    backbone = Backbone.create("resnet50")
+    images = torch.randn(2, 3, 300, 300)
+    backbone_features = backbone(images)
+
+    neck = Neck.create("fpn", backbone.out_spec, out_channels=128)
+    out = neck(backbone_features)
+
+    assert out.feature_maps["P2"].shape[-2:] == (75, 75)
+    assert out.feature_maps["P3"].shape[-2:] == (38, 38)
+    assert out.feature_maps["P4"].shape[-2:] == (19, 19)
+    assert out.feature_maps["P5"].shape[-2:] == (10, 10)
+

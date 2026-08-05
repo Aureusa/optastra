@@ -34,6 +34,7 @@ class FPN(Neck):
         cfg: FPNConfig,
     ):
         super().__init__()
+        self.cfg = cfg
         # Unpack the cfg into local variables for convenience
         in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
         in_channels = in_spec.channels
@@ -85,7 +86,7 @@ class FPN(Neck):
         for name in reversed(self.stage_names[:-1]):
             deeper_name = self.stage_names[self.stage_names.index(name) + 1]
             upsampled = F.interpolate(
-                merged[deeper_name], scale_factor=2, mode="nearest"
+                merged[deeper_name], size=laterals[name].shape[-2:], mode="nearest"
             )
             merged[name] = laterals[name] + upsampled
 

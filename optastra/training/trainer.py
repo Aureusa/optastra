@@ -11,6 +11,9 @@ from .storage import EventStorage
 from .hooks.base import Hook
 
 
+__all__ = ["Trainer"]
+
+
 class Trainer:
     """Orchestrates model + task + optimizer + hooks. Knows nothing about
     what the task computes -- it only calls task.run_step and reads the
@@ -29,6 +32,16 @@ class Trainer:
         self.storage = EventStorage()
         self.state = TrainerState(model=model, task=task, optimizer=optimizer, storage=self.storage, device=resolved_device)
         self.hooks: list[Hook] = list(hooks)
+
+    def info(self) -> str:
+        info_str = f"Trainer:\n"
+        info_str += f"(Model) {self.state.model.info()}\n"
+        info_str += f"(Task) {self.state.task.info()}\n"
+        info_str += f"(Optimizer) {self.state.optimizer.info()}\n"
+        for hook in self.hooks:
+            info_str += f"(Hook) {hook.info()}\n"
+        info_str += f"(Device) {self.state.device}\n"
+        return info_str
 
     @staticmethod
     def _resolve_device(device: str | torch.device) -> torch.device:

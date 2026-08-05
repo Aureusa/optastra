@@ -1,13 +1,6 @@
 import pytest
 
-from optastra.data._registry import (
-    check_collate_registered,
-    get_collate_default_config,
-    get_collate_entrypoint,
-    get_collate_module,
-    list_collates,
-    register_collate,
-)
+from optastra.data.collate import CollateFn, register_collate
 
 
 def test_collate_registry_registers_and_retrieves_entrypoint():
@@ -15,10 +8,11 @@ def test_collate_registry_registers_and_retrieves_entrypoint():
     def UnitTestCollateRegistryFn(batch):
         return batch
 
-    assert "UnitTestCollateRegistryFn" in list_collates()
-    assert get_collate_entrypoint("UnitTestCollateRegistryFn") is UnitTestCollateRegistryFn
-    assert get_collate_module("UnitTestCollateRegistryFn") == __name__.split(".")[-1]
-    assert check_collate_registered("UnitTestCollateRegistryFn") is True
+    registry = CollateFn._registry
+    assert "UnitTestCollateRegistryFn" in registry.list_component()
+    assert registry.get_entrypoint("UnitTestCollateRegistryFn") is UnitTestCollateRegistryFn
+    assert registry.get_module("UnitTestCollateRegistryFn") == __name__.split(".")[-1]
+    assert registry.is_registered("UnitTestCollateRegistryFn") is True
 
 
 def test_collate_registry_stores_default_config_and_detects_duplicates():
@@ -28,7 +22,7 @@ def test_collate_registry_stores_default_config_and_detects_duplicates():
     def UnitTestCollateWithConfig(batch):
         return batch
 
-    assert get_collate_default_config("UnitTestCollateWithConfig") == cfg
+    assert CollateFn._registry.get_default_config("UnitTestCollateWithConfig") == cfg
 
     with pytest.raises(ValueError, match="collate UnitTestCollateWithConfig already registered"):
         @register_collate(config=cfg)
@@ -38,10 +32,10 @@ def test_collate_registry_stores_default_config_and_detects_duplicates():
 
 def test_collate_registry_raises_for_missing_entries():
     with pytest.raises(ValueError, match="collate MissingCollate is not registered"):
-        get_collate_entrypoint("MissingCollate")
+        CollateFn._registry.get_entrypoint("MissingCollate")
 
     with pytest.raises(ValueError, match="collate MissingCollate is not registered"):
-        get_collate_module("MissingCollate")
+        CollateFn._registry.get_module("MissingCollate")
 
     with pytest.raises(ValueError, match="collate MissingCollate is not registered"):
-        get_collate_default_config("MissingCollate")
+        CollateFn._registry.get_default_config("MissingCollate")

@@ -3,7 +3,7 @@ from optastra.nn.features import FeatureSpec
 
 
 def test_region_extractor_config_returns_roi_align_defaults():
-    cfg = RegionExtractor.config("roi_align")
+    cfg = RegionExtractor.get_default_config("roi_align")
 
     assert cfg.output_size == 7
     assert cfg.aligned is True

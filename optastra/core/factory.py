@@ -53,7 +53,7 @@ class Factory(Generic[T]):
             print(f"  {f.name}: {f.type} = {getattr(cfg, f.name)!r}")
 
     @classmethod
-    def config(cls, name: str) -> Any:
+    def get_default_config(cls, name: str) -> Any:
         return cls._registry.get_default_config(name)
 
     @classmethod

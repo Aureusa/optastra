@@ -1,4 +1,3 @@
-# optim/base.py
 from __future__ import annotations
 from dataclasses import replace
 import torch.nn as nn

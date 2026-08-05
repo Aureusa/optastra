@@ -41,6 +41,7 @@ class GlobalPool(Neck):
 
     def __init__(self, in_spec: FeatureSpec, cfg: GlobalPoolConfig):
         super().__init__()
+        self.cfg = cfg
         in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)
@@ -77,6 +78,7 @@ class GeM(Neck):
 
     def __init__(self, in_spec: FeatureSpec, cfg: GeMConfig):
         super().__init__()
+        self.cfg = cfg
         in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)
@@ -107,6 +109,7 @@ class TokenPool(Neck):
 
     def __init__(self, in_spec: FeatureSpec, cfg: TokenPoolConfig):
         super().__init__()
+        self.cfg = cfg
         in_spec.require("channels", "strides") # Ensure that the in_spec has both channels and strides defined
 
         self.stage = cfg.stage or max(in_spec.strides, key=in_spec.strides.get)

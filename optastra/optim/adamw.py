@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import torch.optim as optim
+
 from ._registry import register_optimizer
+from .base import Optimizer
 
 
 @dataclass
@@ -10,7 +12,21 @@ class AdamWConfig:
     weight_decay: float = 0.01
     eps: float = 1e-8
 
+class AdamW(Optimizer, optim.AdamW):
+    """Wrapper for torch.optim.AdamW with default parameters."""
+
+    _registry = Optimizer._registry
+
+    def __init__(self, param_groups, cfg: AdamWConfig):
+        super().__init__(
+            param_groups,
+            lr=cfg.lr,
+            betas=cfg.betas,
+            eps=cfg.eps,
+            weight_decay=cfg.weight_decay
+        )
+        self.cfg = cfg
+
 @register_optimizer(config=AdamWConfig())
 def adamw(param_groups, cfg: AdamWConfig) -> optim.AdamW:
-    return optim.AdamW(param_groups, lr=cfg.lr, betas=cfg.betas, eps=cfg.eps,
-                        weight_decay=cfg.weight_decay)
+    return AdamW(param_groups, cfg=cfg)

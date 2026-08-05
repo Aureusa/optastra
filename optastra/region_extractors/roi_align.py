@@ -73,8 +73,8 @@ class ROIAlign(RegionExtractor):
             aligned=self.aligned,
         )
 
-        pooled = roi_feats.mean(dim=(2, 3))
-        return FeatureMaps(feature_maps={"roi": roi_feats}, pooled=pooled)
+        pooled = roi_feats.mean(dim=(2, 3)) # (num_rois, C)
+        return FeatureMaps(feature_maps={"roi": roi_feats}, pooled=pooled) # (num_rois, C, output_size, output_size)
 
 
 roi_align_configs = {

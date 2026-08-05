@@ -24,4 +24,7 @@ class Hook(ABC):
     # optional, for resumable hooks (e.g. checkpoint counters, EMA state)
     def state_dict(self) -> dict: return {}
     def load_state_dict(self, state: dict) -> None: return
+
+    def info(self) -> str:
+        return f"{self.__class__.__name__} (module: {self.__class__.__module__})"
     

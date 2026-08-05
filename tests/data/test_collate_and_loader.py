@@ -6,7 +6,7 @@ from optastra.data.sample import Sample
 
 # Import for registry side effects (default_collate, dense, ragged, multiview).
 import optastra.data.collate  # noqa: F401
-from optastra.data._registry import get_collate_entrypoint
+from optastra.data.collate import CollateFn
 from optastra.data.loader import build_dataloader
 
 
@@ -16,7 +16,7 @@ def test_dense_collate_stacks_images_and_targets():
         Sample(image=torch.randn(3, 8, 8), target={"targets": torch.tensor(0)}),
     ]
 
-    dense = get_collate_entrypoint("dense")
+    dense = CollateFn._registry.get_entrypoint("dense")
     batch = dense(samples)
 
     assert batch["inputs"].shape == (2, 3, 8, 8)
@@ -29,7 +29,7 @@ def test_ragged_collate_keeps_targets_as_list():
         Sample(image=torch.randn(3, 8, 8), target={"boxes": torch.randn(5, 4)}),
     ]
 
-    ragged = get_collate_entrypoint("ragged")
+    ragged = CollateFn._registry.get_entrypoint("ragged")
     batch = ragged(samples)
 
     assert batch["inputs"].shape == (2, 3, 8, 8)
@@ -45,7 +45,7 @@ def test_multiview_collate_batches_each_view_index():
         Sample(views=[torch.randn(3, 6, 6), torch.randn(3, 6, 6)]),
     ]
 
-    multiview = get_collate_entrypoint("multiview")
+    multiview = CollateFn._registry.get_entrypoint("multiview")
     batch = multiview(samples)
 
     assert "views" in batch

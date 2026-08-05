@@ -4,7 +4,7 @@ from optastra.backbones import Backbone
 
 
 def test_backbone_config_returns_resnet50_default_config():
-    cfg = Backbone.config("resnet50")
+    cfg = Backbone.get_default_config("resnet50")
 
     assert cfg.in_channels == 3
     assert cfg.stem_channels == 64

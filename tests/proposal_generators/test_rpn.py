@@ -2,6 +2,7 @@ import pytest
 import torch
 
 from optastra.nn.features import FeatureMaps, FeatureSpec
+from optastra.nn.blocks.geometry.boxes import clip_boxes_to_image
 from optastra.proposal_generators import ProposalGenerator
 from optastra.proposal_generators.rpn import RPN, RPNConfig
 
@@ -24,7 +25,13 @@ def test_rpn_forward_multi_level_shapes():
     )
     rpn = RPN(
         in_spec=in_spec,
-        cfg=RPNConfig(num_anchors=5, conv_dims=(64, 64), in_features=("P3", "P4")),
+        cfg=RPNConfig(
+            num_anchors=5,
+            anchor_scales=(2.0, 4.0, 6.0, 8.0, 10.0),
+            aspect_ratios=(1.0,),
+            conv_dims=(64, 64),
+            in_features=("P3", "P4"),
+        ),
     )
     feats = FeatureMaps(
         feature_maps={
@@ -54,7 +61,22 @@ def test_rpn_factory_builds_registered_module():
         "rpn",
         in_spec=FeatureSpec(channels={"P3": 64}, strides={"P3": 8}),
         num_anchors=9,
+        anchor_scales=(2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0),
+        aspect_ratios=(1.0,),
     )
 
     assert isinstance(model, RPN)
     assert model.out_spec.channels["P3_objectness"] == 9
+
+
+def test_clip_boxes_to_image_allows_backpropagation():
+    boxes = torch.tensor(
+        [[-2.0, -1.0, 12.0, 14.0], [1.0, 2.0, 9.0, 11.0]],
+        requires_grad=True,
+    )
+
+    clipped = clip_boxes_to_image(boxes, (10, 10))
+    loss = clipped.sum()
+    loss.backward()
+
+    assert boxes.grad is not None

@@ -48,9 +48,9 @@ def test_vgg_create_with_unknown_override_raises_type_error():
 
 
 def test_vgg_create_override_does_not_mutate_default_config():
-    default_cfg = Backbone.config("vgg11")
+    default_cfg = Backbone.get_default_config("vgg11")
     assert default_cfg.in_channels == 3
 
     _ = Backbone.create("vgg11", in_channels=1)
 
-    assert Backbone.config("vgg11").in_channels == 3
+    assert Backbone.get_default_config("vgg11").in_channels == 3
