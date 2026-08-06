@@ -5,7 +5,7 @@ from typing import Any, Mapping
 
 import torch
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field
+from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
 from ._registry import register_task
 from .base import Stage, Task
 from ..detection import DetectionCriterion, Postprocessor
@@ -13,7 +13,7 @@ from ..nn.features import FeatureMaps, HeadOutput
 
 
 @dataclass
-class DetectionTaskConfig:
+class DetectionTaskConfig(ComponentRefConfigMixin):
     num_classes: int = 80
     criterion: ComponentRef = component_field(DetectionCriterion, default_name="rcnn_criterion")
     postprocessor: ComponentRef = component_field(Postprocessor, default_name="rcnn_postprocessor")

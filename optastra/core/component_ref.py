@@ -5,6 +5,32 @@ from typing import Any
 from .factory import Factory
 
 
+def _coerce_to_ref(value: Any) -> Any:
+    """Accepts the friendly forms and normalizes to ComponentRef.
+    None passes through (valid for optional fields)."""
+    # Already a ComponentRef, or optional None
+    if value is None or isinstance(value, ComponentRef):
+        return value
+
+    # No overrides, just a name string
+    if isinstance(value, str):
+        return ComponentRef(value)  # "fpn" -> ComponentRef("fpn")
+
+    # (name, overrides) tuple 
+    if isinstance(value, tuple) and len(value) == 2:
+        name, overrides = value
+        return ComponentRef(name, dict(overrides))  # ("resnet50", {"stem_channels": 32})
+
+    # {"name": ..., "overrides": ...} dict
+    if isinstance(value, dict):
+        return ComponentRef(value["name"], dict(value.get("overrides", {})))  # {"name": resnet50, "overrides": {"stem_channels": 32}}
+    
+    raise TypeError(
+        f"Cannot interpret {value!r} as a ComponentRef. Use a name string, "
+        f"a (name, overrides) tuple, a {{'name':..., 'overrides':...}} dict, or ComponentRef(...) directly."
+    )
+
+
 def component_field(
         factory: type[Factory],
         *,
@@ -24,6 +50,29 @@ def component_field(
     else:
         maker = lambda: ComponentRef(default_name or "", dict(default_overrides or {}))
     return field(default_factory=maker, metadata={"factory": factory}, **kwargs)
+
+
+class ComponentRefConfigMixin:
+    """
+    Mixin: coerces every component_field() on this dataclass from a
+    friendly shorthand into a real ComponentRef, once, right after
+    construction -- so callers never have to import ComponentRef for the
+    common case. The factory metadata is preserved for resolve_component() and
+    resolve_config() to use.
+
+    This is used for configs of components that themselves have component fields,
+    e.g. Faster RCNN has a backbone and a head field, both of which are ComponentRefs.
+    """
+    def __post_init__(self):
+        for f in dc_fields(self):
+            if "factory" not in f.metadata:
+                continue
+            current = getattr(self, f.name)
+            coerced = _coerce_to_ref(current)
+            if getattr(type(self), "__dataclass_fields__", None) and self.__dataclass_params__.frozen:
+                object.__setattr__(self, f.name, coerced)
+            else:
+                setattr(self, f.name, coerced)
 
 
 @dataclass

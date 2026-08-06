@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field
+from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
 from ..backbones.base import Backbone
 from ..heads.base import Head
 from ..necks.base import Neck
@@ -16,7 +16,7 @@ from .base import Architecture
 
 
 @dataclass
-class FastRCNNConfig:
+class FastRCNNConfig(ComponentRefConfigMixin):
     backbone: ComponentRef = component_field(Backbone, default_name="resnet50")
     neck: ComponentRef | None = component_field(Neck, default_name="fpn")
     region_extractor: ComponentRef = component_field(RegionExtractor, default_name="roi_align")

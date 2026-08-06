@@ -2,7 +2,7 @@ import torch
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field
+from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
 from ..backbones.base import Backbone
 from ..necks.base import Neck
 from ..heads.base import Head
@@ -14,7 +14,7 @@ from ._registry import register_architecture
 
 
 @dataclass
-class FasterRCNNConfig:
+class FasterRCNNConfig(ComponentRefConfigMixin):
     backbone: ComponentRef = component_field(Backbone, default_name="resnet50")
     neck: ComponentRef | None = component_field(Neck, default_name="fpn")
     proposal_generator: ComponentRef = component_field(ProposalGenerator, default_name="rpn")

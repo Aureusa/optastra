@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 import yaml
 
-from .component_ref import ComponentRef, component_field
+from .component_ref import ComponentRef, component_field, ComponentRefConfigMixin
 from ..architectures.base import Architecture
 from ..tasks.base import Task
 from ..optim.base import Optimizer
@@ -10,7 +10,7 @@ from ..optim.scheduler_base import Scheduler
 
 
 @dataclass
-class ExperimentConfig:
+class ExperimentConfig(ComponentRefConfigMixin):
     architecture: ComponentRef = component_field(Architecture)
     task: ComponentRef = component_field(Task)
     optimizer: ComponentRef = component_field(Optimizer, default_name="adamw")
