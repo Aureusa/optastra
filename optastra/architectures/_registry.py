@@ -1,5 +1,5 @@
-from optastra.core.registry import ComponentRegistry
+from optastra.core.registry import FamilyRegistry
 
 
-_registry = ComponentRegistry("architecture")
+_registry = FamilyRegistry("architecture")
 register_architecture = _registry.make_decorator()

@@ -1,4 +1,5 @@
-import fnmatch
+from dataclasses import dataclass
+import re
 import sys
 from collections import defaultdict
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, TypeVar
@@ -7,15 +8,22 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, TypeVa
 T = TypeVar("T", bound=Callable[..., Any])
 
 
-class ComponentRegistry:
-    """A small generic registry for model components such as backbones, heads, and necks."""
+@dataclass
+class RegistryEntry:
+    name: str
+    entrypoint: Callable
+    default_config: Any
+    module: str
 
-    def __init__(self, component_name: str):
-        self.component_name = component_name
-        self._module_to_components: DefaultDict[str, Set[str]] = defaultdict(set)
-        self._component_to_module: Dict[str, str] = {}
-        self._component_entrypoints: Dict[str, Callable[..., Any]] = {}
-        self._component_to_default_config: Dict[str, Any] = {}
+
+class FamilyRegistry:
+
+    def __init__(
+        self,
+        family: str,
+    ):
+        self.family = family
+        self._components: Dict[str, RegistryEntry] = {}
 
     def register(self, fn: T, *, default_config: Optional[Any] = None) -> T:
         mod = sys.modules[fn.__module__]
@@ -27,16 +35,17 @@ class ComponentRegistry:
         else:
             mod.__all__ = [component_name]  # type: ignore
 
-        if component_name in self._component_entrypoints:
+        if component_name in self._components:
             raise ValueError(
-                f'{self.component_name} {component_name} already registered by {self._component_to_module[component_name]}'
+                f'{self.family} {component_name} already registered by {self._components[component_name].module}'
             )
 
-        self._component_entrypoints[component_name] = fn
-        self._component_to_module[component_name] = module_name
-        self._module_to_components[module_name].add(component_name)
-        if default_config is not None:
-            self._component_to_default_config[component_name] = default_config
+        self._components[component_name] = RegistryEntry(
+            name=component_name,
+            entrypoint=fn,
+            default_config=default_config,
+            module=module_name,
+        )
         return fn
 
     def make_decorator(self):
@@ -52,30 +61,35 @@ class ComponentRegistry:
 
     def list_component(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
         if module is not None:
-            components = list(self._module_to_components.get(module, []))
+            components = [name for name, entry in self._components.items() if entry.module == module]
         else:
-            components = list(self._component_entrypoints.keys())
+            components = list(self._components.keys())
 
         if filter not in (None, ""):
-            components = fnmatch.filter(components, filter)
+            try:
+                pattern = re.compile(filter, flags=re.IGNORECASE)
+            except re.error:
+                # Fall back to literal substring semantics when the regex is invalid.
+                pattern = re.compile(re.escape(filter), flags=re.IGNORECASE)
+            components = [name for name in components if pattern.search(name)]
         return sorted(components)
 
     def is_registered(self, name: str) -> bool:
-        return name in self._component_entrypoints
+        return name in self._components
 
     def get_entrypoint(self, name: str) -> Callable[..., Any]:
-        if name not in self._component_entrypoints:
-            raise ValueError(f'{self.component_name} {name} is not registered')
-        return self._component_entrypoints[name]
+        if name not in self._components:
+            raise ValueError(f'{self.family} {name} is not registered')
+        return self._components[name].entrypoint
 
     def get_module(self, name: str) -> str:
-        if name not in self._component_to_module:
-            raise ValueError(f'{self.component_name} {name} is not registered')
-        return self._component_to_module[name]
+        if name not in self._components:
+            raise ValueError(f'{self.family} {name} is not registered')
+        return self._components[name].module
 
     def get_default_config(self, name: str) -> Any:
-        if name not in self._component_entrypoints:
-            raise ValueError(f'{self.component_name} {name} is not registered')
-        if name not in self._component_to_default_config:
-            raise ValueError(f'{self.component_name} {name} does not have a default config')
-        return self._component_to_default_config[name]
+        if name not in self._components:
+            raise ValueError(f'{self.family} {name} is not registered')
+        if self._components[name].default_config is None:
+            raise ValueError(f'{self.family} {name} does not have a default config')
+        return self._components[name].default_config

@@ -2,9 +2,12 @@ from __future__ import annotations
 from dataclasses import replace, fields
 from typing import Any, ClassVar, Generic, TypeVar
 
-from .registry import ComponentRegistry
+from .registry import FamilyRegistry
 
 T = TypeVar("T")
+
+
+FACTORIES: dict[str, type] = {}
 
 
 class Factory(Generic[T]):
@@ -15,12 +18,24 @@ class Factory(Generic[T]):
     `_post_create` to validate the built instance.
     """
 
-    _registry: ClassVar[ComponentRegistry]
+    _registry: ClassVar[FamilyRegistry]
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        registry = cls.__dict__.get("_registry")   # only if THIS class sets it
+        if registry is None:
+            return   # intermediate/abstract subclasses (e.g. SpecFactory itself) don't register
+        if registry.family in FACTORIES and FACTORIES[registry.family] is not cls:
+            raise ValueError(
+                f"Family '{registry.family}' already registered by "
+                f"{FACTORIES[registry.family].__name__}, cannot also register {cls.__name__}."
+            )
+        FACTORIES[registry.family] = cls
 
     @classmethod
     def _check_registered(cls, name: str) -> None:
         if not cls._registry.is_registered(name):
-            raise ValueError(f"{cls._registry.component_name} '{name}' is not registered.")
+            raise ValueError(f"{cls._registry.family} '{name}' is not registered.")
 
     @classmethod
     def _build_cfg(cls, name: str, overrides: dict) -> Any:
@@ -58,6 +73,9 @@ class Factory(Generic[T]):
 
     @classmethod
     def list_all(cls, module: str | None = None, filter: str | None = None) -> list[str]:
+        """
+        List all registered components in this family, optionally filtering by module and/or substring.
+        """
         return cls._registry.list_component(module=module, filter=filter)
 
 
@@ -82,4 +100,21 @@ class SpecFactory(Factory[T]):
         cfg = cls._build_cfg(name, overrides)
         instance = entrypoint(in_spec, cfg) if cfg is not None else entrypoint(in_spec)
         return cls._post_create(instance)
-    
+
+
+def list_all_registered_components(module: str | None = None, filter: str | None = None, family: str | None = None) -> dict[str, list[str]]:
+    """
+    List all registered components in every family, optionally filtering by module and/or substring.
+    """
+    if family is not None:
+        cls = FACTORIES.get(family)
+        if cls is None:
+            return {}
+        return {family: cls.list_all(module=module, filter=filter)}
+
+    result = {}
+    for family, cls in FACTORIES.items():
+        r = cls.list_all(module=module, filter=filter)
+        if r:
+            result[family] = r
+    return result

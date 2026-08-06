@@ -1,7 +1,7 @@
 from torch.utils.data._utils.collate import default_collate as torch_default_collate
 
 from .sample import Sample
-from optastra.core.registry import ComponentRegistry
+from optastra.core.registry import FamilyRegistry
 from optastra.core.factory import Factory
 
 
@@ -13,7 +13,7 @@ class CollateFn(Factory["CollateFn"]):
     Registry for collate functions. Collate functions are used to combine a list of samples into a batch.
     """
 
-    _registry = ComponentRegistry("collate")
+    _registry = FamilyRegistry("collate")
 
     @classmethod
     def create(cls, name: str, **kwargs) -> "CollateFn":

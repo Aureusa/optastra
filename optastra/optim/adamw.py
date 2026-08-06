@@ -14,9 +14,6 @@ class AdamWConfig:
 
 class AdamW(Optimizer, optim.AdamW):
     """Wrapper for torch.optim.AdamW with default parameters."""
-
-    _registry = Optimizer._registry
-
     def __init__(self, param_groups, cfg: AdamWConfig):
         super().__init__(
             param_groups,

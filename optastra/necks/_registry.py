@@ -1,5 +1,5 @@
-from optastra.core.registry import ComponentRegistry
+from optastra.core.registry import FamilyRegistry
 
 
-_registry = ComponentRegistry("neck")
+_registry = FamilyRegistry("neck")
 register_neck = _registry.make_decorator()

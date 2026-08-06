@@ -1,5 +1,5 @@
-from optastra.core.registry import ComponentRegistry
+from optastra.core.registry import FamilyRegistry
 
 
-_registry = ComponentRegistry("task")
+_registry = FamilyRegistry("task")
 register_task = _registry.make_decorator()
