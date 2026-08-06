@@ -2,7 +2,11 @@ from dataclasses import dataclass, field
 from typing import Any
 import torch
 
-from ..core.component_ref import ComponentRef
+from ..proposal_generators.base import ProposalGenerator
+
+from ..core.component_ref import ComponentRef, resolve_component, component_field
+from ..backbones import Backbone
+from ..necks.base import Neck
 from ..heads.base import Head
 from ..nn.features import HeadOutput
 from ._registry import register_architecture
@@ -12,8 +16,12 @@ from ..region_extractors.base import RegionExtractor
 
 @dataclass
 class MaskRCNNConfig(FasterRCNNConfig):
-    mask_head: ComponentRef = field(default_factory=lambda: ComponentRef("mask_rcnn_head"))
-    mask_region_extractor: ComponentRef = field(default_factory=lambda: ComponentRef("roi_align"))
+    mask_head: ComponentRef = component_field(Head, default_name="mask_rcnn_head")
+    mask_region_extractor: ComponentRef = component_field(
+        RegionExtractor,
+        default_name="roi_align",
+        default_overrides={"output_size": 14} # default to 14x14 since the default box head output is 7x7
+    )
 
 
 class MaskRCNN(FasterRCNN):
@@ -22,8 +30,8 @@ class MaskRCNN(FasterRCNN):
         self.cfg = cfg
         detector_in_spec = self.neck.out_spec if self.neck is not None else self.backbone.out_spec
 
-        self.mask_region_extractor = cfg.mask_region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
-        self.mask_head = cfg.mask_head.resolve(Head, in_spec=self.mask_region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.mask_region_extractor = resolve_component(cfg, "mask_region_extractor", in_spec=detector_in_spec)
+        self.mask_head = resolve_component(cfg, "mask_head", in_spec=self.mask_region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"MaskRCNN Architecture:\n"

@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from ..core.component_ref import ComponentRef
+from ..core.component_ref import ComponentRef, resolve_component, component_field
 from ..backbones.base import Backbone
 from ..heads.base import Head
 from ..necks.base import Neck
@@ -17,10 +17,10 @@ from .base import Architecture
 
 @dataclass
 class FastRCNNConfig:
-    backbone: ComponentRef = field(default_factory=lambda: ComponentRef("resnet50"))
-    neck: ComponentRef | None = field(default_factory=lambda: ComponentRef("fpn"))
-    region_extractor: ComponentRef = field(default_factory=lambda: ComponentRef("roi_align"))
-    roi_box_head: ComponentRef = field(default_factory=lambda: ComponentRef("roi_box_head"))
+    backbone: ComponentRef = component_field(Backbone, default_name="resnet50")
+    neck: ComponentRef | None = component_field(Neck, default_name="fpn")
+    region_extractor: ComponentRef = component_field(RegionExtractor, default_name="roi_align")
+    roi_box_head: ComponentRef = component_field(Head, default_name="roi_box_head")
     num_classes: int = 91
 
 
@@ -31,16 +31,16 @@ class FastRCNN(Architecture):
         super().__init__()
         self.cfg = cfg
 
-        self.backbone = cfg.backbone.resolve(Backbone)
+        self.backbone = resolve_component(cfg, "backbone")
         if cfg.neck is not None:
-            self.neck = cfg.neck.resolve(Neck, in_spec=self.backbone.out_spec)
+            self.neck = resolve_component(cfg, "neck", in_spec=self.backbone.out_spec)
             detector_in_spec = self.neck.out_spec
         else:
             self.neck = None
             detector_in_spec = self.backbone.out_spec
 
-        self.region_extractor = cfg.region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
-        self.roi_head = cfg.roi_box_head.resolve(Head, in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.region_extractor = resolve_component(cfg, "region_extractor", in_spec=detector_in_spec)
+        self.roi_head = resolve_component(cfg, "roi_box_head", in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"FastRCNN Architecture:\n"

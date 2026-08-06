@@ -29,7 +29,7 @@ def test_masked_rcnn_forward_returns_boxes_and_masks():
 
     assert out.logits.shape == (2, 5)
     assert out.values.shape == (2, 4)
-    assert out.masks.shape == (2, 4, 14, 14)
+    assert out.masks.shape == (2, 4, 28, 28)
     assert "rpn" in out.extra
     assert isinstance(out.extra["rpn"], FeatureMaps)
 

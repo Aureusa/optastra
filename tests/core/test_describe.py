@@ -9,7 +9,7 @@ def test_resolve_experiment_expands_nested_components():
             "mask_rcnn_r50_fpn",
             {
                 "num_classes": 20,
-                "backbone_overrides": {"stem_channels": 32},
+                "backbone": ComponentRef("resnet50", {"stem_channels": 32}),
             },
         ),
         task=ComponentRef("detection_task", {"num_classes": 2}),

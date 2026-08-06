@@ -1,140 +1,93 @@
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields as dc_fields, is_dataclass, replace
 from typing import Any
-from dataclasses import is_dataclass, fields
 
 from .factory import Factory
 
 
+def component_field(
+        factory: type[Factory],
+        *,
+        default_name: str | None = None,
+        default_overrides: dict | None = None,
+        optional: bool = False,
+        **kwargs
+    ) -> Any:
+    """
+    Declares a ComponentRef field AND which Factory resolves it -- one
+    place, read by resolve_component() at build time and by
+    resolve_config() at describe time. They can never disagree because
+    there's only one mapping, not two.
+    """
+    if optional and default_name is None:
+        maker = lambda: None
+    else:
+        maker = lambda: ComponentRef(default_name or "", dict(default_overrides or {}))
+    return field(default_factory=maker, metadata={"factory": factory}, **kwargs)
+
+
 @dataclass
 class ComponentRef:
-    """
-    Names a registered component + overrides -- never a resolved config
-    object. This is what every .create(name, **overrides) call actually
-    consumes, so it's always both serializable and reconstructible."""
-    name: str = field(default_factory=str)
+    """Names a registered component + overrides. Carries no factory --
+    the factory is context (which field this ref sits in), not data."""
+    name: str
     overrides: dict[str, Any] = field(default_factory=dict)
-    factory: Factory | None = field(default=None, repr=False, compare=False)
 
-    def resolve(self, factory: Factory, **extras) -> Any:
-        """Resolve the component reference to a concrete object."""
-        if self.factory is not None:
-            return self.factory.create(self.name, **self.overrides, **extras)
-        else:
-            return factory.create(self.name, **self.overrides, **extras)
+    def resolve(self, factory: type[Factory], **extras) -> Any:
+        return factory.create(self.name, **self.overrides, **extras)
 
-    def resolve_config(
-        self,
-        fallback_factory: Factory | None = None,
-    ) -> dict[str, Any]:
-        """
-        Convert this reference into a fully expanded serializable config.
-        Output contains only effective merged fields.
-        """
-        factory = self.factory or fallback_factory
-        if factory is None:
-            overrides = _serialize_config(self.overrides)
-            return {
-                "name": self.name,
-                **overrides,
-            }
-
+    def resolve_config(self, factory: type[Factory] | None) -> dict[str, Any]:
+        if factory is None or not self.name:
+            return {"name": self.name, **_serialize_config(self.overrides)}
         default = factory.get_default_config(self.name)
-
-        default_serialized = _serialize_config(default) if default is not None else {}
-        overrides_serialized = _serialize_config(self.overrides)
-        resolved = _deep_merge(default_serialized, overrides_serialized)
-
-        return {
-            "name": self.name,
-            **resolved,
-        }
+        if default is None:
+            return {"name": self.name, **_serialize_config(self.overrides)}
+        merged = replace(default, **self.overrides)   # same op Factory.create already uses
+        return {"name": self.name, **_serialize_config(merged)}
 
 
-def _deep_merge(base: Any, patch: Any) -> Any:
-    if isinstance(base, dict) and isinstance(patch, dict):
-        merged = {k: _serialize_config(v) for k, v in base.items()}
-        for k, v in patch.items():
-            if k in merged:
-                merged[k] = _deep_merge(merged[k], v)
-            else:
-                merged[k] = _serialize_config(v)
-        return merged
-    return _serialize_config(patch)
+def resolve_component(cfg: Any, field_name: str, **extras) -> Any:
+    """
+    Resolves cfg.<field_name> using the Factory declared via
+    component_field() on that field. Same mapping resolve_config() reads --
+    this is the single source of truth for both build and describe.
+    """
+    value = getattr(cfg, field_name)
+    if value is None:
+        return None
+    if not isinstance(value, ComponentRef):
+        raise TypeError(
+            f"{type(cfg).__name__}.{field_name} is a {type(value).__name__}, not a ComponentRef "
+            f"(got {value!r}). If you're constructing a config instance, use ComponentRef(...) "
+            f"for the value -- component_field(...) is only for declaring the field in the "
+            f"dataclass body, never for supplying a value."
+        )
+    f = next(f for f in dc_fields(cfg) if f.name == field_name)
+    factory = f.metadata.get("factory")
+    if factory is None:
+        raise ValueError(f"'{field_name}' on {type(cfg).__name__} has no declared factory; use component_field().")
+    return value.resolve(factory, **extras)
 
 
 def _serialize_config(value: Any) -> Any:
-    """
-    Convert dataclasses and ComponentRefs recursively
-    into YAML-safe Python objects.
-    """
-
+    """Recursively flatten dataclasses/dicts/lists to YAML-safe values.
+    Dataclass fields typed as ComponentRef are resolved via their own
+    declared factory metadata -- no separate inference needed."""
     if isinstance(value, ComponentRef):
-        return value.resolve_config()
-
-    if is_dataclass(value):
-        return {
-            f.name: _serialize_field(f.name, getattr(value, f.name))
-            for f in fields(value)
-            if f.name != "factory"
-        }
-
+        return {"name": value.name, **_serialize_config(value.overrides)}
+    if is_dataclass(value) and not isinstance(value, type):
+        result = {}
+        for f in dc_fields(value):
+            v = getattr(value, f.name)
+            if isinstance(v, ComponentRef):
+                result[f.name] = v.resolve_config(f.metadata.get("factory"))
+            else:
+                result[f.name] = _serialize_config(v)
+        return result
     if isinstance(value, dict):
-        return {
-            k: _serialize_field(str(k), v)
-            for k, v in value.items()
-        }
-
+        return {k: _serialize_config(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [
-            _serialize_config(v)
-            for v in value
-        ]
-
+        return [_serialize_config(v) for v in value]
     if isinstance(value, type):
         return value.__name__
-
     return value
-
-
-def _serialize_field(field_name: str, value: Any) -> Any:
-    if isinstance(value, ComponentRef) and value.factory is None:
-        inferred_factory = _infer_factory_for_field(field_name)
-        if inferred_factory is not None:
-            value = replace(value, factory=inferred_factory)
-    return _serialize_config(value)
-
-
-def _infer_factory_for_field(field_name: str) -> Factory | None:
-    from ..architectures.base import Architecture
-    from ..backbones.base import Backbone
-    from ..heads.base import Head
-    from ..necks.base import Neck
-    from ..optim.base import Optimizer
-    from ..optim.scheduler_base import Scheduler
-    from ..proposal_generators.base import ProposalGenerator
-    from ..region_extractors.base import RegionExtractor
-    from ..tasks.base import Task
-    from ..detection.base_criterion import DetectionCriterion
-    from ..detection.base_matcher import Matcher
-    from ..detection.base_postprocessor import Postprocessor
-    from ..detection.base_sampler import Sampler
-
-    by_field_name: dict[str, Factory] = {
-        "architecture": Architecture,
-        "task": Task,
-        "optimizer": Optimizer,
-        "scheduler": Scheduler,
-        "backbone": Backbone,
-        "neck": Neck,
-        "proposal_generator": ProposalGenerator,
-        "region_extractor": RegionExtractor,
-        "mask_region_extractor": RegionExtractor,
-        "roi_box_head": Head,
-        "mask_head": Head,
-        "criterion": DetectionCriterion,
-        "postprocessor": Postprocessor,
-        "matcher": Matcher,
-        "sampler": Sampler,
-    }
-    return by_field_name.get(field_name)

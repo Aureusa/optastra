@@ -2,7 +2,7 @@ import torch
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..core.component_ref import ComponentRef
+from ..core.component_ref import ComponentRef, resolve_component, component_field
 from ..backbones.base import Backbone
 from ..necks.base import Neck
 from ..heads.base import Head
@@ -15,11 +15,11 @@ from ._registry import register_architecture
 
 @dataclass
 class FasterRCNNConfig:
-    backbone: ComponentRef = field(default_factory=lambda: ComponentRef("resnet50"))
-    neck: ComponentRef | None = field(default_factory=lambda: ComponentRef("fpn"))
-    proposal_generator: ComponentRef = field(default_factory=lambda: ComponentRef("rpn"))
-    region_extractor: ComponentRef = field(default_factory=lambda: ComponentRef("roi_align"))
-    roi_box_head: ComponentRef = field(default_factory=lambda: ComponentRef("roi_box_head"))
+    backbone: ComponentRef = component_field(Backbone, default_name="resnet50")
+    neck: ComponentRef | None = component_field(Neck, default_name="fpn")
+    proposal_generator: ComponentRef = component_field(ProposalGenerator, default_name="rpn")
+    region_extractor: ComponentRef = component_field(RegionExtractor, default_name="roi_align")
+    roi_box_head: ComponentRef = component_field(Head, default_name="roi_box_head")
     num_classes: int = 91
 
 
@@ -31,18 +31,18 @@ class FasterRCNN(Architecture):
         super().__init__()
         self.cfg = cfg
 
-        self.backbone = cfg.backbone.resolve(Backbone)
+        self.backbone = resolve_component(cfg, "backbone")
 
         if cfg.neck is not None:
-            self.neck = cfg.neck.resolve(Neck, in_spec=self.backbone.out_spec)
+            self.neck = resolve_component(cfg, "neck", in_spec=self.backbone.out_spec)
             detector_in_spec = self.neck.out_spec
         else:
             self.neck = None
             detector_in_spec = self.backbone.out_spec
 
-        self.proposal_generator = cfg.proposal_generator.resolve(ProposalGenerator, in_spec=detector_in_spec)
-        self.region_extractor = cfg.region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
-        self.roi_head = cfg.roi_box_head.resolve(Head, in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.proposal_generator = resolve_component(cfg, "proposal_generator", in_spec=detector_in_spec)
+        self.region_extractor = resolve_component(cfg, "region_extractor", in_spec=detector_in_spec)
+        self.roi_head = resolve_component(cfg, "roi_box_head", in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"FasterRCNN Architecture:\n"

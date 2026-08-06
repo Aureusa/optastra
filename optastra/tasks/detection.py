@@ -5,7 +5,7 @@ from typing import Any, Mapping
 
 import torch
 
-from ..core.component_ref import ComponentRef
+from ..core.component_ref import ComponentRef, resolve_component, component_field
 from ._registry import register_task
 from .base import Stage, Task
 from ..detection import DetectionCriterion, Postprocessor
@@ -15,8 +15,8 @@ from ..nn.features import FeatureMaps, HeadOutput
 @dataclass
 class DetectionTaskConfig:
     num_classes: int = 80
-    criterion: ComponentRef = field(default_factory=lambda: ComponentRef("rcnn_criterion"))
-    postprocessor: ComponentRef = field(default_factory=lambda: ComponentRef("rcnn_postprocessor"))
+    criterion: ComponentRef = component_field(DetectionCriterion, default_name="rcnn_criterion")
+    postprocessor: ComponentRef = component_field(Postprocessor, default_name="rcnn_postprocessor")
 
 
 class DetectionTask(Task):
@@ -26,8 +26,8 @@ class DetectionTask(Task):
     def __init__(self, cfg: DetectionTaskConfig = DetectionTaskConfig()):
         self.cfg = cfg
 
-        self.criterion = cfg.criterion.resolve(DetectionCriterion, num_classes=cfg.num_classes)
-        self.postprocessor = cfg.postprocessor.resolve(Postprocessor)
+        self.criterion = resolve_component(cfg, "criterion", num_classes=cfg.num_classes)
+        self.postprocessor = resolve_component(cfg, "postprocessor")
 
     def validate_predictions(self, raw_preds: Any) -> None:
         if not isinstance(raw_preds, HeadOutput):
