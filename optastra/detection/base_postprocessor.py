@@ -12,6 +12,6 @@ class Postprocessor(Factory["Postprocessor"]):
 
     _registry = postprocessor_registry
 
-    def process(self, raw_preds: HeadOutput, num_classes: int, image_size: tuple[int, int] | None = None) -> list[Sample]:
+    def process(self, raw_preds: HeadOutput, num_classes: int) -> list[Sample]:
         raise NotImplementedError("Postprocessor subclasses must implement the process method.")
     

@@ -7,7 +7,7 @@ import torch
 from .._registry import register_postprocessor
 from ...data.sample import Sample
 from ...nn.blocks.geometry.boxes import apply_deltas_to_anchors, batched_nms, clip_boxes_to_image
-from ...nn.features import HeadOutput
+from ...nn.features import FeatureMaps, HeadOutput
 
 
 @dataclass
@@ -24,7 +24,12 @@ class RCNNPostprocessor:
     def __init__(self, cfg: RCNNPostprocessorConfig):
         self.cfg = cfg
 
-    def process(self, raw_preds: HeadOutput, num_classes: int, image_size: tuple[int, int] | None = None) -> list[Sample]:
+    def process(self, raw_preds: HeadOutput, num_classes: int) -> list[Sample]:
+        image_size = None
+        rpn_output = raw_preds.extra.get("rpn")
+        if isinstance(rpn_output, FeatureMaps):
+            image_size = rpn_output.extra.get("image_size")
+
         if raw_preds.logits is None or raw_preds.values is None:
             return []
         roi_boxes = raw_preds.extra.get("roi_boxes")

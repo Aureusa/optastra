@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import replace, fields
+from dataclasses import replace, fields, asdict
 from typing import Any, ClassVar, Generic, TypeVar
 
 from .registry import FamilyRegistry
@@ -118,3 +118,27 @@ def list_all_registered_components(module: str | None = None, filter: str | None
         if r:
             result[family] = r
     return result
+
+
+def list_all_registered_families() -> list[str]:
+    """
+    List all registered component families.
+    """
+    return list(FACTORIES.keys())
+
+
+def get_component_parameters(name: str, family: str | None = None) -> dict[str, Any]:
+    """
+    Get the default config parameters for a registered component.
+    """
+    if family is not None:
+        cls = FACTORIES.get(family)
+        if cls is None:
+            raise ValueError(f"Family '{family}' is not registered.")
+        return asdict(cls.get_default_config(name))
+
+    for family, cls in FACTORIES.items():
+        if cls._registry.is_registered(name):
+            return asdict(cls.get_default_config(name))
+
+    raise ValueError(f"Component '{name}' is not registered in any family.")

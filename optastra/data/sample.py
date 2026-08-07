@@ -11,4 +11,4 @@ class Sample:
     image: torch.Tensor | None = None
     views: list[torch.Tensor] | None = None   # populated instead of `image` for SSL algorithms
     target: dict[str, Any] = field(default_factory=dict)  # "label", "boxes", "labels", "mask", ...
-    meta: dict[str, Any] = field(default_factory=dict)     # id, path, orig size -- never touched by loss
+    meta: dict[str, Any] = field(default_factory=dict)     # e.g. id, path, orig size

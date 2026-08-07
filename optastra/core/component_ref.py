@@ -1,8 +1,39 @@
 from __future__ import annotations
+from functools import wraps
+from inspect import signature
 from dataclasses import dataclass, field, fields as dc_fields, is_dataclass, replace
-from typing import Any
+from typing import Any, get_type_hints, get_origin, get_args
 
 from .factory import Factory
+
+
+def _coerce_component_annotation(value, annotation):
+    """Recursively coerce values based on a type annotation."""
+
+    if annotation is ComponentRef:
+        return _coerce_to_ref(value)
+
+    origin = get_origin(annotation)
+
+    # list[ComponentRef], tuple[ComponentRef], set[ComponentRef], etc.
+    if origin in (list, tuple, set):
+        (item_type,) = get_args(annotation)
+        if value is None:
+            return None
+        return origin(
+            _coerce_component_annotation(item, item_type)
+            for item in value
+        )
+
+    # dict[str, ComponentRef]
+    if origin is dict:
+        key_type, value_type = get_args(annotation)
+        return {
+            k: _coerce_component_annotation(v, value_type)
+            for k, v in value.items()
+        }
+
+    return value
 
 
 def _coerce_to_ref(value: Any) -> Any:
@@ -29,6 +60,35 @@ def _coerce_to_ref(value: Any) -> Any:
         f"Cannot interpret {value!r} as a ComponentRef. Use a name string, "
         f"a (name, overrides) tuple, a {{'name':..., 'overrides':...}} dict, or ComponentRef(...) directly."
     )
+
+
+def coerce_component_refs(fn):
+    """
+    When applied to a function, automatically coerces any ComponentRef-typed
+    arguments from friendly shorthands (name string, (name, overrides) tuple,
+    or {"name":..., "overrides":...} dict) into a ComponentRef instance
+    before calling the function. This is useful for functions that accept
+    ComponentRef arguments, so that callers don't have to import ComponentRef
+    or construct it manually.
+    """
+    sig = signature(fn)
+    hints = get_type_hints(fn)
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        for name, value in bound.arguments.items():
+            annotation = hints.get(name)
+            if annotation is not None:
+                bound.arguments[name] = _coerce_component_annotation(
+                    value, annotation
+                )
+
+        return fn(*bound.args, **bound.kwargs)
+
+    return wrapper
 
 
 def component_field(

@@ -32,6 +32,8 @@ class MLP(nn.Module):
         for i in range(num_layers):
             input_dim = in_features if i == 0 else hidden_features
             output_dim = out_features if i == num_layers - 1 else hidden_features
+            assert input_dim is not None, f"input_dim is None"
+            assert output_dim is not None, f"output_dim is None"
             layers.append(nn.Linear(input_dim, output_dim))
             if i < num_layers - 1:
                 # Linear -> Norm -> Activation -> Dropout

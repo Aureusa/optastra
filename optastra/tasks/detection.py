@@ -78,7 +78,7 @@ class DetectionTask(Task):
         rpn_output = raw_preds.extra.get("rpn")
         if isinstance(rpn_output, FeatureMaps):
             image_size = rpn_output.extra.get("image_size")
-        return self.postprocessor.process(raw_preds, num_classes=self.cfg.num_classes, image_size=image_size)
+        return self.postprocessor.process(raw_preds, num_classes=self.cfg.num_classes)
 
 
 detection_task_configs = {

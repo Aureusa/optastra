@@ -32,6 +32,7 @@ class ClassificationHead(Head):
         ):
         super().__init__()
         self.cfg = cfg
+        in_spec.require("embed_dim")
         in_features = in_spec.embed_dim
 
         self.num_classes = cfg.num_classes

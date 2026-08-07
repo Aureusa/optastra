@@ -7,12 +7,13 @@ import torch.nn.functional as F
 from torchvision.ops import roi_align
 
 from ...core.component_ref import ComponentRef
+from ...nn.blocks.geometry.boxes import encode_boxes
+from ...nn.features import FeatureMaps, HeadOutput
+
 from ..base_matcher import Matcher
 from ..base_sampler import Sampler
 from .._registry import register_criterion
 from ..base_criterion import DetectionCriterion
-from ...nn.blocks.geometry.boxes import encode_boxes
-from ...nn.features import FeatureMaps, HeadOutput
 
 
 def _labels_to_binary(labels: torch.Tensor, *, num_classes: int) -> torch.Tensor:
