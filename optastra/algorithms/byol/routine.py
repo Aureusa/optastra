@@ -1,4 +1,3 @@
-# algorithms/byol/task.py
 import torch, torch.nn.functional as F
 from dataclasses import dataclass
 from ..base import Algorithm
@@ -34,10 +33,23 @@ class BYOLTask(Algorithm):
         # symmetric loss: predict view2's target from view1's online, and vice versa
         loss_1to2 = _neg_cosine_sim(raw_preds["online_z1"], raw_preds["target_z2"])
         loss_2to1 = _neg_cosine_sim(raw_preds["online_z2"], raw_preds["target_z1"])
-        return {"byol_loss": (loss_1to2 + loss_2to1).mean()}
+        return {"byol_loss": 0.5 * (loss_1to2 + loss_2to1).mean()}
 
     def reduce_losses(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
         return losses["byol_loss"]
+
+    def compute_metrics(self, raw_preds, targets) -> dict[str, float]:
+        """
+        Compute metrics for monitoring, e.g., the standard deviation of the online and target representations.
+        """
+        online_z1 = F.normalize(raw_preds["online_z1"], dim=-1)
+        online_z1_std = online_z1.std(dim=0).mean().item()
+        online_z2 = F.normalize(raw_preds["online_z2"], dim=-1)
+        online_z2_std = online_z2.std(dim=0).mean().item()
+        return {
+            "online_z1_std": online_z1_std,
+            "online_z2_std": online_z2_std,
+        }
 
 
 @register_task(config=BYOLConfig())

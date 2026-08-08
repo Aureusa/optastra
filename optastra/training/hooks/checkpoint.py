@@ -4,6 +4,10 @@ from ..state import TrainerState
 
 
 class CheckpointHook(Hook):
+    """
+    Hook to save model checkpoints during training.
+    Currently, it saves the model and optimizer state_dicts every `save_every` iterations.
+    """
     def __init__(self, output_dir: str, save_every: int = 500):
         self.output_dir = output_dir
         self.save_every = save_every

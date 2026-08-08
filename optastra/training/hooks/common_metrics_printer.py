@@ -125,3 +125,20 @@ class CommonMetricPrinterHook(Hook):
         ]
         self.logger.info("  ".join(p for p in parts if p))
 
+    def after_eval(self, state: TrainerState) -> None:
+        s = state.storage
+        if s.max_eval_iter == 0:
+            return
+
+        # Log final eval metrics after evaluation is complete.
+        # The avg metrics are here self.storage.put_scalars(axis="iter", **{f"val_{k}": v for k, v in averaged.items()})
+        latest = s.latest()
+
+        # Get only the val_ prefixed metrics for logging.
+        val_metrics = {k: v for k, v in latest.items() if k.startswith("val_")}
+        if not val_metrics:
+            self.logger.info(f"[eval @ iter {state.iter}] No val_ metrics found in storage.")
+            return
+
+        metrics_str = "  ".join(f"{k}: {v:.4g}" for k, v in sorted(val_metrics.items()))
+        self.logger.info(f"[eval @ iter {state.iter}] Final eval metrics: {metrics_str}")
