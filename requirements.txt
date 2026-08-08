@@ -2,3 +2,9 @@ torch
 torchvision
 pytest
 pyyaml
+matplotlib
+
+# Extra
+astropy
+jupyter
+datasets

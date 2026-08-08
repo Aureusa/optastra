@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 import torch
 from torch.utils.data import Dataset
-from torchvision.io import read_image
+from torchvision.io import decode_image
 from PIL import Image, ImageDraw
 
 from .sample import Sample
@@ -138,7 +138,10 @@ class CocoDetectionDataset(Dataset[Sample]):
         image_id = int(image_record["id"])
 
         image_path = self.image_root / image_record["file_name"]
-        image = read_image(str(image_path)).to(torch.float32).div(255.0)
+        raw = decode_image(str(image_path))
+
+        image = raw.to(torch.float32).div(65535.0)  # Normalize to [0, 1] for 16-bit images
+
         if self.transform is not None:
             image = self.transform(image)
 

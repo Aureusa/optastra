@@ -113,3 +113,27 @@ def batched_nms(boxes: torch.Tensor, scores: torch.Tensor, level_ids: torch.Tens
     if boxes.numel() == 0:
         return torch.empty((0,), dtype=torch.long, device=boxes.device)
     return tv_batched_nms(boxes, scores, level_ids, iou_threshold)
+
+def flip_boxes(boxes: torch.Tensor, image_width: int, image_height: int = None, f_type: str = "h") -> torch.Tensor:
+    """
+    Flip boxes either horizontally or vertically.
+    
+    :param boxes: Tensor of shape (N, 4) containing boxes in XYXY format.
+    :param image_width: Width of the image for horizontal flip.
+    :param image_height: Height of the image for vertical flip.
+    :param f_type: Type of flip, either 'h' for horizontal or 'v' for vertical.
+    :return: Tensor of shape (N, 4) containing flipped boxes
+    """
+    x1, y1, x2, y2 = boxes.unbind(dim=-1)
+
+    if f_type == "v":
+        if image_height is None:
+            raise ValueError("image_height must be specified for vertical flip")
+        flipped_y1 = image_height - y2
+        flipped_y2 = image_height - y1
+        return torch.stack((x1, flipped_y1, x2, flipped_y2), dim=-1)
+    elif f_type == "h":
+        flipped_x1 = image_width - x2
+        flipped_x2 = image_width - x1
+        return torch.stack((flipped_x1, y1, flipped_x2, y2), dim=-1)
+    

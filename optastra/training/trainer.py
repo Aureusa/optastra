@@ -95,7 +95,6 @@ class Trainer:
             if self.state.should_stop:
                 break
             self.state.iter = self.storage.iter = it
-            self._run_hooks("before_step")
 
             step_start = time.perf_counter()
             data_iter, batch, epoch_advanced, data_time = self._next_batch(data_iter, dataloader)
@@ -105,9 +104,12 @@ class Trainer:
             self.storage.put_scalar("data_time", data_time)
 
             batch = self._move_to_device(batch, self.state.device)
+            self.state.current_batch = batch
+
+            self._run_hooks("before_step")
 
             self.state.optimizer.zero_grad()
-            output = self.state.task.run_step(self.state.model, batch, stage="train")
+            output = self.state.task.run_step(self.state.model, self.state.current_batch, stage="train")
             output.loss.backward()
             self.state.optimizer.step()
 
