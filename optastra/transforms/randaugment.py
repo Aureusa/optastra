@@ -20,17 +20,15 @@ import torchvision.transforms.functional as F
 
 from .base import Transform
 from ._registry import register_transform
+from .functional import (
+    safe_posterize,
+    safe_autocontrast,
+    safe_equalize,
+    safe_solarize
+)
 
 
 __all__ = ["RandAugment"]
-
-
-def _to_uint8(img):
-    return (img * 255.0).clamp(0, 255).to(torch.uint8)
-
-
-def _from_uint8(img):
-    return img.to(torch.float32) / 255.0
 
 
 def _identity(img, m):
@@ -44,49 +42,20 @@ def _rotate(img, m):
 
 def _posterize(img, m):
     bits = int(round(8 - (m / 10.0) * 4))
-    bits = max(1, min(8, bits))
-
-    # F.posterize does not support floating point images, so we convert to uint8 and back
-    if img.is_floating_point():
-        img_uint8 = (img * 255.0).clamp(0, 255).to(torch.uint8)
-        out = F.posterize(img_uint8, bits)
-        return out.to(torch.float32) / 255.0
-
-    return F.posterize(img, bits)
+    return safe_posterize(img, bits)
 
 
 def _autocontrast(img, m):
-    if img.is_floating_point():
-        img = _to_uint8(img)
-        img = F.autocontrast(img)
-        return _from_uint8(img)
+    return safe_autocontrast(img)
 
-    return F.autocontrast(img)
+
+def _equalize(img, m):
+    return safe_equalize(img)
 
 
 def _solarize(img, m):
     threshold = 1.0 - (m / 10.0)
-
-    # If the image is floating point, we need to ensure that the threshold is less
-    # than the maximum pixel value in the image. Otherwise, torchvision will raise an error.
-    if img.is_floating_point():
-        # torchvision requires threshold < max(img)
-        threshold = min(threshold, float(img.max()) - 1e-6)
-        threshold = max(threshold, 0.0)
-
-    else:
-        threshold = min(threshold * 255, 255)
-
-    return F.solarize(img, threshold)
-
-
-def _equalize(img, m):
-    if img.is_floating_point():
-        img = _to_uint8(img)
-        img = F.equalize(img)
-        return _from_uint8(img)
-
-    return F.equalize(img)
+    return safe_solarize(img, threshold)
 
 
 def _color(img, m):
@@ -163,6 +132,11 @@ def _translate_y(img, m):
     )
 
 
+_PHOTOMETRIC_OPS = {"Identity", "AutoContrast", "Equalize", "Posterize", "Solarize",
+                     "Color", "Contrast", "Brightness", "Sharpness"}
+_GEOMETRIC_OPS = {"Rotate", "ShearX", "ShearY", "TranslateX", "TranslateY"}
+
+
 _OPS = {
     "Identity": _identity,
     "AutoContrast": _autocontrast,
@@ -190,7 +164,7 @@ class RandAugmentConfig:
     magnitude: int = 9   # standard RandAugment N,M notation
 
     ops: list[str] = field(
-        default_factory=lambda: list(_OPS.keys())
+        default_factory=lambda: list(_PHOTOMETRIC_OPS)
     )
 
 
@@ -218,4 +192,9 @@ class RandAugment(Transform):
 
 @register_transform(config=RandAugmentConfig())
 def rand_augment(cfg):
+    return RandAugment(cfg)
+
+@register_transform(config=RandAugmentConfig())
+def rand_augment_all_ops(cfg):
+    cfg.ops = list(_OPS.keys())
     return RandAugment(cfg)
