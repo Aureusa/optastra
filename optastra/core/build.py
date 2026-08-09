@@ -36,10 +36,13 @@ def build_sequential_model(
     bb = Backbone.create(backbone.name, **backbone.overrides)
     out_spec = bb.out_spec
     neck_modules = []
-    for neck in necks:
-        neck_module = Neck.create(neck.name, **neck.overrides, in_spec=out_spec)
-        neck_modules.append(neck_module)
-        out_spec = neck_module.out_spec
+    if necks is None:
+        necks = []
+    else:
+        for neck in necks:
+            neck_module = Neck.create(neck.name, **neck.overrides, in_spec=out_spec)
+            neck_modules.append(neck_module)
+            out_spec = neck_module.out_spec
     head_module = Head.create(head.name, **head.overrides, in_spec=out_spec)
     return nn.Sequential(
         *([bb] + neck_modules + [head_module])
