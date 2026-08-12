@@ -11,9 +11,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Your Name", email = "you@example.com" },
+    { name = "Petar Penchev"},
 ]
-keywords = ["computer-vision", "pytorch", "deep-learning", "self-supervised-learning", "astronomy"]
+keywords = ["computer-vision", "pytorch", "deep-learning", "self-supervised-learning"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -59,8 +59,8 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/optastra"
-Repository = "https://github.com/yourname/optastra"
+Homepage = "https://github.com/Aureusa/optastra"
+Repository = "https://github.com/Aureusa/optastra"
 
 # --- setuptools-specific packaging config ---
 

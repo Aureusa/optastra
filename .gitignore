@@ -1,6 +1,11 @@
 .pytest*
 __pycache__/
-runs/
 *.log
 *.json
 main.py
+
+# Build
+*.egg-info
+
+# Runs
+runs/
