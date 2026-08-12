@@ -1,0 +1,75 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optastra"
+version = "0.1.0"
+description = "A modular computer vision framework built on PyTorch, focused on composable architectures, clean implementations, and research reproducibility."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Name", email = "you@example.com" },
+]
+keywords = ["computer-vision", "pytorch", "deep-learning", "self-supervised-learning", "astronomy"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+# Core runtime dependencies -- required for `import optastra` and normal
+# usage (backbones, necks, heads, tasks, training) to work at all.
+dependencies = [
+    "torch>=2.1",
+    "torchvision>=0.16",
+    "pyyaml>=6.0",
+    "matplotlib"
+]
+
+[project.optional-dependencies]
+# Needed only for the HuggingFace-datasets-backed data loading examples
+# (e.g. mwalmsley/gz_evo) -- not required for the core framework.
+data = [
+    "datasets>=2.14",
+]
+
+# Needed only for local development: running the test suite.
+dev = [
+    "pytest>=7.4",
+]
+
+# Needed only for notebooks / exploratory visualization.
+notebook = [
+    "jupyter",
+]
+
+# Convenience bundle: everything needed to develop optastra itself
+# (run tests, use notebooks, load example datasets). NOT installed by
+# default for downstream users who just `pip install optastra`.
+all = [
+    "optastra[data,dev,notebook]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourname/optastra"
+Repository = "https://github.com/yourname/optastra"
+
+# --- setuptools-specific packaging config ---
+
+[tool.setuptools.packages.find]
+include = ["optastra*"]
+exclude = ["tests*", "runs*"]
+
+[tool.setuptools.package-data]
+# If you ever ship non-.py assets inside the package (e.g. default configs,
+# small fractal images for PixMix's mixing_set), list them here so they're
+# included in the built wheel. Empty for now.
+optastra = []

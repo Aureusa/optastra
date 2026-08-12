@@ -5,6 +5,5 @@ pyyaml
 matplotlib
 
 # Extra
-astropy
 jupyter
 datasets
