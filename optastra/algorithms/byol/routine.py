@@ -42,13 +42,86 @@ class BYOLTask(Algorithm):
         """
         Compute metrics for monitoring, e.g., the standard deviation of the online and target representations.
         """
+        # Normalize representations
         online_z1 = F.normalize(raw_preds["online_z1"], dim=-1)
-        online_z1_std = online_z1.std(dim=0).mean().item()
         online_z2 = F.normalize(raw_preds["online_z2"], dim=-1)
-        online_z2_std = online_z2.std(dim=0).mean().item()
+
+        target_z1 = F.normalize(raw_preds["target_z1"], dim=-1)
+        target_z2 = F.normalize(raw_preds["target_z2"], dim=-1)
+
+        # ------------------------------------------------------------
+        # 1. Positive-pair similarity
+        #
+        # Same image, two different augmentations.
+        # This should generally increase during training.
+        # Value in the range [-1, 1], with 1 being perfect alignment.
+        # ------------------------------------------------------------
+        pos_cos = 0.5 * (
+            (online_z1 * target_z2).sum(dim=-1).mean()
+            + (online_z2 * target_z1).sum(dim=-1).mean()
+        )
+
+        # ------------------------------------------------------------
+        # 2. Negative / different-image similarity
+        #
+        # Compare online representation of image i with target
+        # representation of image j, j != i.
+        #
+        # We use a cyclic shift so that no image is compared with itself.
+        # This should NOT converge toward 1.
+        # ------------------------------------------------------------
+        neg_target_z1 = torch.roll(target_z1, shifts=1, dims=0)
+        neg_target_z2 = torch.roll(target_z2, shifts=1, dims=0)
+
+        neg_cos = 0.5 * (
+            (online_z1 * neg_target_z1).sum(dim=-1).mean()
+            + (online_z2 * neg_target_z2).sum(dim=-1).mean()
+        )
+
+        # ------------------------------------------------------------
+        # 3. Representation standard deviation
+        #
+        # Average std across embedding dimensions.
+        # Collapse -> approximately 0.
+        # ------------------------------------------------------------
+        online_std = 0.5 * (
+            online_z1.std(dim=0).mean()
+            + online_z2.std(dim=0).mean()
+        )
+
+        target_std = 0.5 * (
+            target_z1.std(dim=0).mean()
+            + target_z2.std(dim=0).mean()
+        )
+
+        # ------------------------------------------------------------
+        # 4. Effective rank
+        #
+        # Measures how many dimensions of the embedding are actually
+        # being used.
+        #
+        # 1 = complete collapse
+        # D = approximately full-rank representation.
+        # ------------------------------------------------------------
+        z = torch.cat([online_z1, online_z2], dim=0).float()
+        z = z - z.mean(dim=0, keepdim=True)
+
+        cov = z.T @ z / max(z.shape[0] - 1, 1)
+
+        eigenvalues = torch.linalg.eigvalsh(cov).clamp_min(1e-12)
+
+        p = eigenvalues / eigenvalues.sum()
+
+        effective_rank = torch.exp(
+            -(p * torch.log(p)).sum()
+        )
+
         return {
-            "online_z1_std": online_z1_std,
-            "online_z2_std": online_z2_std,
+            "byol_pos_cos": pos_cos.item(),
+            "byol_neg_cos": neg_cos.item(),
+            "online_std": online_std.item(),
+            "target_std": target_std.item(),
+            "online_eff_rank": effective_rank.item(),
         }
 
 
