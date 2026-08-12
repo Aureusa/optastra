@@ -10,6 +10,37 @@ from ..nn.blocks.geometry.boxes import flip_boxes
 
 __all__ = ["RandomHFlip", "RandomVFlip", "RandomResizedCrop"]
 
+@dataclass
+class ResizeConfig:
+    size: int = 224
+
+
+class Resize(Transform):
+    """Resize image and target to the specified size."""
+
+    def __init__(self, cfg: ResizeConfig = ResizeConfig()):
+        self.cfg = cfg
+
+    def _resize_boxes(self, sample):
+        if "boxes" in sample.target:
+            boxes = sample.target["boxes"].clone()
+            boxes[:, [0, 2]] *= (self.cfg.size / sample.image.shape[-1])
+            boxes[:, [1, 3]] *= (self.cfg.size / sample.image.shape[-2])
+            sample.target["boxes"] = boxes
+        return sample
+
+    def _resize_masks(self, sample):
+        if "masks" in sample.target:
+            masks = sample.target["masks"]
+            sample.target["masks"] = F.resize(masks, [self.cfg.size, self.cfg.size])
+        return sample
+
+    def __call__(self, sample):
+        sample.image = F.resize(sample.image, [self.cfg.size, self.cfg.size])
+        sample = self._resize_boxes(sample)
+        sample = self._resize_masks(sample)
+        return sample
+
 
 @dataclass
 class RandomResizedCropConfig:

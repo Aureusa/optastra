@@ -25,9 +25,19 @@ class ClassificationTask(Task):
         self.reduction = cfg.reduction
 
     def compute_losses(self, raw_preds, targets):
-        loss = F.cross_entropy(raw_preds.logits, targets["targets"],
-                                label_smoothing=self.cfg.label_smoothing,
-                                reduction=self.reduction)
+        if "labels_b" in targets:
+            # CutMix/MixUp path: interpolate the two label losses by lam
+            loss_a = F.cross_entropy(raw_preds.logits, targets["labels"],
+                                      label_smoothing=self.cfg.label_smoothing, reduction=self.reduction)
+            loss_b = F.cross_entropy(raw_preds.logits, targets["labels_b"],
+                                      label_smoothing=self.cfg.label_smoothing, reduction=self.reduction)
+            lam = targets["lam"]
+            loss = lam * loss_a + (1 - lam) * loss_b
+        else:
+            # Standard classification path
+            loss = F.cross_entropy(raw_preds.logits, targets["labels"],
+                                    label_smoothing=self.cfg.label_smoothing,
+                                    reduction=self.reduction)
         return {"ce_loss": loss}
 
     def validate_batch(self, batch: Mapping[str, Any], stage: Stage = "train"):
@@ -44,10 +54,13 @@ class ClassificationTask(Task):
 
     def preprocess_targets(self, raw_targets: Mapping[str, Any] | torch.Tensor) -> Mapping[str, Any]:
         if isinstance(raw_targets, Mapping):
-            targets = raw_targets["targets"]
-        else:
-            targets = raw_targets
-        return {"targets": targets.long()}
+            # pass through mixed-label fields untouched if CutMix/MixUp already ran
+            out = {"labels": raw_targets["labels"].long()}
+            if "labels_b" in raw_targets:
+                out["labels_b"] = raw_targets["labels_b"].long()
+                out["lam"] = raw_targets["lam"]
+            return out
+        return {"labels": raw_targets.long()}
 
     def forward_model(self, model, inputs: Mapping[str, Any]) -> Any:
         return model(inputs)
@@ -59,8 +72,8 @@ class ClassificationTask(Task):
     def compute_metrics(self, raw_preds: HeadOutput, targets: Mapping[str, Any]) -> dict[str, float]:
         with torch.no_grad():
             preds = torch.argmax(raw_preds.logits, dim=1)
-            correct = (preds == targets["targets"]).sum().item()
-            total = targets["targets"].size(0)
+            correct = (preds == targets["labels"]).sum().item()
+            total = targets["labels"].size(0)
             accuracy = correct / total
         return {"accuracy": accuracy}
 

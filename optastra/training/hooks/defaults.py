@@ -16,8 +16,8 @@ def default_hooks(
     """
     default_hooks_list = [
         CheckpointHook(output_dir=output_dir, save_every=checkpoint_every),
-        JSONWriterHook(output_dir=f"{output_dir}/logs", log_every=log_every),
         CommonMetricPrinterHook(log_every=log_every),
+        JSONWriterHook(output_dir=f"{output_dir}/logs", log_every=log_every)
     ]
     if resume:
         default_hooks_list.append(ResumeHook(output_dir=output_dir, checkpoint_name=checkpoint_name))
