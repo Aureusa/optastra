@@ -35,8 +35,8 @@ class CommonMetricPrinterHook(Hook):
 
         # ETA from smoothed step time * remaining iters
         eta_str = "N/A"
-        if "time" in s._history:
-            avg_time = s.smoothed("time")
+        if "iter_time" in s._history:
+            avg_time = s.smoothed("iter_time")
             remaining = state.max_iter - state.iter
             eta_str = str(datetime.timedelta(seconds=int(avg_time * remaining)))
 
@@ -52,9 +52,9 @@ class CommonMetricPrinterHook(Hook):
             for k in sorted(loss_names)
         )
 
-        time_str = f"time: {s.smoothed('time'):.4f}  last_time: {s.latest().get('time', 0):.4f}" if "time" in s._history else ""
-        data_str = f"data_time: {s.smoothed('data_time'):.4f}  last_data_time: {s.latest().get('data_time', 0):.4f}" if "data_time" in s._history else ""
-        lr_str = f"lr: {s.latest().get('lr', float('nan')):.4g}" if "lr" in s._history else ""
+        time_str = f"avg_iter_time: {s.smoothed('iter_time'):.4f} s" if "iter_time" in s._history else ""
+        data_str = f"avg_data_time: {s.smoothed('data_time'):.4f} s" if "data_time" in s._history else ""
+        lr_str = f"lr: {s.latest().get('lr', float('nan')):.2e}" if "lr" in s._history else ""
 
         mem_str = ""
         if torch.cuda.is_available():

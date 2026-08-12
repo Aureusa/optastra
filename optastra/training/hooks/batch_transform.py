@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .base import Hook
 from ..state import TrainerState
-from ...transforms.batch import BatchTransform
+from ...transforms import BatchTransform
 
 
 class BatchTransformHook(Hook):

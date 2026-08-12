@@ -45,6 +45,7 @@ class EvalHook(Hook):
     def after_step(self, state: TrainerState) -> None:
         # Fire at iter 200, 400, ... for eval_period=200 and skip iter 0.
         if self.eval_period > 0 and state.iter > 0 and state.iter % self.eval_period == 0:
+            self.logger.info(f"Running evaluation at iter {state.iter}/{state.max_iter}...")
             self._do_eval(state)
 
     def after_train(self, state: TrainerState) -> None:
