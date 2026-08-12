@@ -14,6 +14,7 @@ _ACTS = {
     "sigmoid": nn.Sigmoid,
     "tanh": nn.Tanh,
     "softmax": nn.Softmax,
+    "silu": nn.SiLU,
     None: None
 }
 _DROPS = {
