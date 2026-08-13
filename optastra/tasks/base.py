@@ -34,12 +34,20 @@ class Task(ABC, Factory["Task"]):
         inputs, raw_targets = self.split_inputs_targets(batch, stage)
         targets = self.preprocess_targets(raw_targets) if raw_targets is not None else None
 
-        raw_preds = self.forward_model(model, inputs)
+        with torch.autocast(
+            device_type="cuda",
+            dtype=torch.bfloat16,
+        ):
+            raw_preds = self.forward_model(model, inputs)
         self.validate_predictions(raw_preds)
 
         losses, total_loss = {}, None
         if stage in ("train", "val") and targets is not None:
-            losses = self.compute_losses(raw_preds, targets)
+            with torch.autocast(
+                device_type="cuda",
+                dtype=torch.bfloat16,
+            ):
+                losses = self.compute_losses(raw_preds, targets)
             total_loss = self.reduce_losses(losses)
 
         metrics = {}

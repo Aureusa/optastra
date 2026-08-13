@@ -108,13 +108,13 @@ class Trainer:
 
             self._run_hooks("before_step")
 
-            self.state.optimizer.zero_grad()
+            self.state.optimizer.zero_grad(set_to_none=True)
             output = self.state.task.run_step(self.state.model, self.state.current_batch, stage="train")
             output.loss.backward()
             self.state.optimizer.step()
 
             self.state.last_output = output
-            self.storage.put_scalar("time", time.perf_counter() - step_start)
+            self.storage.put_scalar("iter_time", time.perf_counter() - step_start)
             self.storage.put_scalar("total_loss", output.loss.item())
             self.storage.put_scalars(**{k: v.item() for k, v in output.losses.items()})
 
