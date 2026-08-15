@@ -91,22 +91,15 @@ class CommonMetricPrinterHook(Hook):
             if k not in skip_keys
             and k not in ("lr",)
             and "loss" not in k.lower()
+            and "_dm" not in k.lower()  # exclude dmlab metrics
         ]
         metrics_str = "  ".join(
             f"{k}: {s.smoothed(k) if k in self._SMOOTH else fresh.get(k, float('nan')):.4g}"
             for k in sorted(metric_names)
         )
 
-        time_str = (
-            f"time: {s.smoothed(time_key):.4f}  last_time: {fresh.get(time_key, 0):.4f}"
-            if time_key in fresh
-            else ""
-        )
-        data_str = (
-            f"data_time: {s.smoothed(data_time_key):.4f}  last_data_time: {fresh.get(data_time_key, 0):.4f}"
-            if data_time_key in fresh
-            else ""
-        )
+        time_str = f"avg_iter_time: {s.smoothed(time_key):.4f} s" if time_key in s._history else ""
+        data_str = f"avg_data_time: {s.smoothed(data_time_key):.4f} s" if data_time_key in s._history else ""
         lr_str = f"lr: {fresh.get('lr', float('nan')):.4g}" if "lr" in fresh else ""
 
         mem_str = ""

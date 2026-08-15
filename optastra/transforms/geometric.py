@@ -8,7 +8,40 @@ from ._registry import register_transform
 from ..nn.blocks.geometry.boxes import flip_boxes
 
 
-__all__ = ["RandomHFlip", "RandomVFlip", "RandomResizedCrop"]
+__all__ = ["Crop", "Resize", "RandomHFlip", "RandomVFlip", "RandomResizedCrop"]
+
+
+@dataclass
+class CropConfig:
+    size: int = 224
+
+
+class Crop(Transform):
+    """Crop image and target to the specified size."""
+
+    def __init__(self, cfg: CropConfig = CropConfig()):
+        self.cfg = cfg
+
+    def _crop_boxes(self, sample):
+        if "boxes" in sample.target:
+            boxes = sample.target["boxes"].clone()
+            boxes[:, [0, 2]] -= (sample.image.shape[-1] - self.cfg.size) / 2
+            boxes[:, [1, 3]] -= (sample.image.shape[-2] - self.cfg.size) / 2
+            sample.target["boxes"] = boxes.clamp(min=0)
+        return sample
+
+    def _crop_masks(self, sample):
+        if "masks" in sample.target:
+            masks = sample.target["masks"]
+            sample.target["masks"] = F.center_crop(masks, [self.cfg.size, self.cfg.size])
+        return sample
+
+    def __call__(self, sample):
+        sample.image = F.center_crop(sample.image, [self.cfg.size, self.cfg.size])
+        sample = self._crop_boxes(sample)
+        sample = self._crop_masks(sample)
+        return sample
+    
 
 @dataclass
 class ResizeConfig:
@@ -130,13 +163,23 @@ class RandomVFlip(Transform):
         if "masks" in sample.target:
             sample.target["masks"] = F.vflip(sample.target["masks"])
         return sample
+    
+
+@register_transform(config=CropConfig())
+def crop(cfg: CropConfig): return Crop(cfg)
+
+
+@register_transform(config=ResizeConfig())
+def resize(cfg: ResizeConfig): return Resize(cfg)
 
 
 @register_transform(config=RandomResizedCropConfig())
 def random_resized_crop(cfg): return RandomResizedCrop(cfg)
 
+
 @register_transform(config=RandomFlipConfig())
 def random_hflip(cfg: RandomFlipConfig): return RandomHFlip(cfg)
+
 
 @register_transform(config=RandomFlipConfig())
 def random_vflip(cfg: RandomFlipConfig): return RandomVFlip(cfg)

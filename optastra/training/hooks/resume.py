@@ -44,9 +44,4 @@ class ResumeHook(Hook):
         state.optimizer.load_state_dict(checkpoint["optimizer"])
         state.iter = checkpoint["iter"]
         self.logger.info(f"Resumed training from checkpoint: {self.checkpoint_path} at iteration {state.iter}")
-
-    def before_eval(self, state):
-        """
-        Load the checkpoint before evaluation if needed.
-        """
-        return self.before_train(state)  # Reuse the same logic for evaluation
+        

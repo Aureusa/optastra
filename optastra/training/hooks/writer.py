@@ -72,6 +72,7 @@ class JSONWriterHook(Hook):
             "eta": eta_str,
             "eta_seconds": eta_seconds,
             "scalars": scalars,
+            "raw": latest,
             "time": {
                 "smoothed": s.smoothed("time") if "time" in s._history else None,
                 "last": latest.get("time") if "time" in s._history else None,
@@ -87,9 +88,6 @@ class JSONWriterHook(Hook):
                 else None
             ),
         }
-
-        # Compatibility with existing readers/tests that expect top-level scalar keys.
-        record.update(latest)
         return record
 
     def _build_eval_record(self, state: TrainerState) -> dict | None:

@@ -131,6 +131,7 @@ class Trainer:
         self._run_hooks("before_eval")
 
         all_metrics: dict[str, list[float]] = {}
+        all_losses: list[float] = []
         try:
             data_iter = iter(dataloader)
             eval_it = 0
@@ -147,7 +148,11 @@ class Trainer:
                 output = self.state.task.run_step(self.state.model, batch, stage="val")
                 self.state.last_output = output
 
-                # per-batch, tagged on the eval axis -- has its own history now
+                if output.loss is not None:
+                    loss_value = float(output.loss.item())
+                    all_losses.append(loss_value)
+                    self.storage.put_scalar("val_step_total_loss", loss_value, axis="eval_iter")
+
                 self.storage.put_scalars(axis="eval_iter",
                                         **{f"val_step_{k}": v for k, v in output.metrics.items()})
                 self.storage.put_scalar("eval_time", time.perf_counter() - step_start, axis="eval_iter")
@@ -158,6 +163,9 @@ class Trainer:
                 eval_it += 1
 
             averaged = {k: sum(v) / len(v) for k, v in all_metrics.items()}
+            if all_losses:
+                averaged["total_loss"] = sum(all_losses) / len(all_losses)
+
             self.storage.put_scalars(axis="iter", **{f"val_{k}": v for k, v in averaged.items()})
             return averaged
         finally:
