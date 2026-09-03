@@ -2,13 +2,14 @@ from dataclasses import dataclass
 import math
 import random
 import torchvision.transforms.functional as F
+from torchvision.transforms import InterpolationMode
 
 from .base import Transform
 from ._registry import register_transform
 from ..nn.blocks.geometry.boxes import flip_boxes
 
 
-__all__ = ["Crop", "Resize", "RandomHFlip", "RandomVFlip", "RandomResizedCrop"]
+__all__ = ["Crop", "Resize", "RandomCrop", "RandomRotation", "RandomHFlip", "RandomVFlip", "RandomResizedCrop"]
 
 
 @dataclass
@@ -40,6 +41,80 @@ class Crop(Transform):
         sample.image = F.center_crop(sample.image, [self.cfg.size, self.cfg.size])
         sample = self._crop_boxes(sample)
         sample = self._crop_masks(sample)
+        return sample
+
+
+@dataclass
+class RandomCropConfig:
+    size: int = 224
+ 
+ 
+class RandomCrop(Transform):
+    """
+    Crop a fixed-size window about a random centroid within the image.
+    """
+    def __init__(self, cfg: RandomCropConfig = RandomCropConfig()):
+        self.cfg = cfg
+ 
+    def __call__(self, sample):
+        if "boxes" in sample.target or "masks" in sample.target:
+            raise NotImplementedError(
+                "RandomCrop does not support box/mask targets yet."
+            )
+        _, h, w = sample.image.shape
+        size = self.cfg.size
+        if h < size or w < size:
+            raise ValueError(f"Image ({h}x{w}) is smaller than crop size {size}")
+        top = random.randint(0, h - size)
+        left = random.randint(0, w - size)
+        sample.image = F.crop(sample.image, top, left, size, size)
+        return sample
+
+
+@dataclass
+class RandomRotationConfig:
+    degrees: tuple[float, float] = (0.0, 180.0)
+    interpolation: str = "bilinear"
+ 
+ 
+class RandomRotation(Transform):
+    """
+    Random rotation with reflection-padded boundaries.
+
+    Interpolation modes:
+    Available interpolation methods are ``nearest``, ``nearest-exact``, ``bilinear``, ``bicubic``, ``box``, ``hamming``,
+    and ``lanczos``.
+    """
+    interpolation_modes = {
+        "nearest": InterpolationMode.NEAREST,
+        "nearest-exact": InterpolationMode.NEAREST_EXACT,
+        "bilinear": InterpolationMode.BILINEAR,
+        "bicubic": InterpolationMode.BICUBIC,
+        "box": InterpolationMode.BOX,
+        "hamming": InterpolationMode.HAMMING,
+        "lanczos": InterpolationMode.LANCZOS,
+    }
+ 
+    def __init__(self, cfg: RandomRotationConfig = RandomRotationConfig()):
+        self.cfg = cfg
+        self.interpolation = self.interpolation_modes[self.cfg.interpolation]
+ 
+    def _rotate_reflect(self, image):
+        _, h, w = image.shape
+        # pad enough that the rotated corners never expose the border
+        pad = int(math.ceil((math.sqrt(h ** 2 + w ** 2) - min(h, w)) / 2)) + 1
+        angle = random.uniform(*self.cfg.degrees)
+        padded = F.pad(image, pad, padding_mode="reflect")
+        rotated = F.rotate(padded, angle, interpolation=self.interpolation, expand=False)
+        return F.center_crop(rotated, [h, w])
+ 
+    def __call__(self, sample):
+        if "boxes" in sample.target or "masks" in sample.target:
+            raise NotImplementedError(
+                "RandomRotation does not support box/mask targets; "
+                "the Walmsley et al. recipe is classification-only."
+            )
+        sample.image = self._rotate_reflect(sample.image)
         return sample
     
 
@@ -167,6 +242,14 @@ class RandomVFlip(Transform):
 
 @register_transform(config=CropConfig())
 def crop(cfg: CropConfig): return Crop(cfg)
+
+
+@register_transform(config=RandomCropConfig())
+def random_crop(cfg: RandomCropConfig): return RandomCrop(cfg)
+
+
+@register_transform(config=RandomRotationConfig())
+def random_rotation(cfg: RandomRotationConfig): return RandomRotation(cfg)
 
 
 @register_transform(config=ResizeConfig())

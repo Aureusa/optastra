@@ -46,9 +46,17 @@ _IMAGENET_POLICY = [
 ]
 
 
+def _scale_policy(policy, factor: float, cap: float = 10.0):
+    return [
+        [(op, prob, max(0.0, min(mag * factor, cap))) for (op, prob, mag) in sub_policy]
+        for sub_policy in policy
+    ]
+
+
 @dataclass
 class AutoAugmentConfig:
     policy: list = field(default_factory=lambda: _IMAGENET_POLICY)
+    magnitude_scale: float = 1.0
 
 
 class AutoAugment(Transform):
@@ -59,9 +67,10 @@ class AutoAugment(Transform):
 
     def __init__(self, cfg: AutoAugmentConfig = AutoAugmentConfig()):
         self.cfg = cfg
+        self._policy = _scale_policy(cfg.policy, cfg.magnitude_scale)
 
     def __call__(self, sample):
-        sub_policy = random.choice(self.cfg.policy)
+        sub_policy = random.choice(self._policy)
         for op_name, prob, magnitude in sub_policy:
             if random.random() < prob:
                 sample.image = ALL_OPS[op_name](sample.image, magnitude)
@@ -70,3 +79,15 @@ class AutoAugment(Transform):
 
 @register_transform(config=AutoAugmentConfig())
 def auto_augment(cfg): return AutoAugment(cfg)
+
+
+@register_transform(config=AutoAugmentConfig())
+def auto_augment_weak(cfg):
+    cfg.magnitude_scale = 0.5
+    return AutoAugment(cfg)
+
+ 
+@register_transform(config=AutoAugmentConfig())
+def auto_augment_strong(cfg):
+    cfg.magnitude_scale = 1.3
+    return AutoAugment(cfg)

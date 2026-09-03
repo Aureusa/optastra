@@ -33,3 +33,17 @@ class MixUp(BatchTransform):
 
 @register_batch_transform(config=MixUpConfig())
 def mixup(cfg): return MixUp(cfg)
+
+
+@register_batch_transform(config=MixUpConfig())
+def mixup_weak(cfg):
+    cfg.alpha = 0.05
+    cfg.p = 0.25
+    return MixUp(cfg)
+ 
+ 
+@register_batch_transform(config=MixUpConfig())
+def mixup_strong(cfg):
+    cfg.alpha = 1.0
+    cfg.p = 0.8
+    return MixUp(cfg)

@@ -55,3 +55,19 @@ class AugMix(Transform):
 
 @register_transform(config=AugMixConfig())
 def augmix(cfg): return AugMix(cfg)
+
+
+@register_transform(config=AugMixConfig())
+def augmix_weak(cfg):
+    cfg.num_chains = 2
+    cfg.chain_depth = 1
+    cfg.magnitude = 1.5
+    return AugMix(cfg)
+ 
+ 
+@register_transform(config=AugMixConfig())
+def augmix_strong(cfg):
+    cfg.num_chains = 3
+    cfg.chain_depth = 3
+    cfg.magnitude = 7.0
+    return AugMix(cfg)

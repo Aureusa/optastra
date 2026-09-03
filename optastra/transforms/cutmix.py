@@ -54,3 +54,17 @@ class CutMix(BatchTransform):
 
 @register_batch_transform(config=CutMixConfig())
 def cutmix(cfg): return CutMix(cfg)
+
+
+@register_batch_transform(config=CutMixConfig())
+def cutmix_weak(cfg):
+    cfg.p = 0.25
+    cfg.alpha = 0.5
+    return CutMix(cfg)
+ 
+ 
+@register_batch_transform(config=CutMixConfig())
+def cutmix_strong(cfg):
+    cfg.p = 0.8
+    cfg.alpha = 2.0  # concentrates lam near 0.5 -> a consistently sized patch, not occasional huge swaps
+    return CutMix(cfg)

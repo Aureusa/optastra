@@ -18,6 +18,7 @@ __all__ = ["TrivialAugment"]
 @dataclass
 class TrivialAugmentConfig:
     ops: list[str] = field(default_factory=lambda: list(ALL_OPS.keys()))
+    magnitude_min: float = 0.0
     magnitude_max: float = 10.0
 
 
@@ -32,10 +33,24 @@ class TrivialAugment(Transform):
 
     def __call__(self, sample):
         op_name = random.choice(self.cfg.ops)
-        magnitude = random.uniform(0, self.cfg.magnitude_max)   # uniform, not fixed -- the whole point
+        magnitude = random.uniform(self.cfg.magnitude_min, self.cfg.magnitude_max)   # uniform, not fixed -- the whole point
         sample.image = ALL_OPS[op_name](sample.image, magnitude)
         return sample
 
 
 @register_transform(config=TrivialAugmentConfig())
 def trivial_augment(cfg): return TrivialAugment(cfg)
+
+
+@register_transform(config=TrivialAugmentConfig())
+def trivial_augment_weak(cfg):
+    cfg.magnitude_min = 0.0
+    cfg.magnitude_max = 4.0
+    return TrivialAugment(cfg)
+ 
+ 
+@register_transform(config=TrivialAugmentConfig())
+def trivial_augment_strong(cfg):
+    cfg.magnitude_min = 6.0
+    cfg.magnitude_max = 10.0
+    return TrivialAugment(cfg)
