@@ -43,5 +43,10 @@ class ResumeHook(Hook):
         state.model.load_state_dict(checkpoint["model"])
         state.optimizer.load_state_dict(checkpoint["optimizer"])
         state.iter = checkpoint["iter"]
+        for hook in state.hooks:
+            if hasattr(hook, "load_state_dict") and "hooks" in checkpoint:
+                hook_state = next((h for h in checkpoint["hooks"] if h.get("name") == hook.__class__.__name__), None)
+                if hook_state:
+                    hook.load_state_dict(hook_state["state"])
         self.logger.info(f"Resumed training from checkpoint: {self.checkpoint_path} at iteration {state.iter}")
         

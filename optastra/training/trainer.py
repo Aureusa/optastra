@@ -30,18 +30,8 @@ class Trainer:
         resolved_device = self._resolve_device(device)
         model = model.to(resolved_device)
         self.storage = EventStorage()
-        self.state = TrainerState(model=model, task=task, optimizer=optimizer, storage=self.storage, device=resolved_device)
         self.hooks: list[Hook] = list(hooks)
-
-    def info(self) -> str:
-        info_str = f"Trainer:\n"
-        info_str += f"(Model) {self.state.model.info()}\n"
-        info_str += f"(Task) {self.state.task.info()}\n"
-        info_str += f"(Optimizer) {self.state.optimizer.info()}\n"
-        for hook in self.hooks:
-            info_str += f"(Hook) {hook.info()}\n"
-        info_str += f"(Device) {self.state.device}\n"
-        return info_str
+        self.state = TrainerState(model=model, task=task, optimizer=optimizer, storage=self.storage, device=resolved_device, hooks=self.hooks)
 
     @staticmethod
     def _resolve_device(device: str | torch.device) -> torch.device:
@@ -67,9 +57,10 @@ class Trainer:
 
     def register_hooks(self, hooks: Iterable[Hook]) -> None:
         self.hooks.extend(hooks)
+        self.state.hooks = self.hooks  # update state with new hooks
 
     def _run_hooks(self, method_name: str) -> None:
-        for hook in self.hooks:
+        for hook in self.state.hooks:
             getattr(hook, method_name)(self.state)
 
     def _next_batch(self, data_iter, dataloader):

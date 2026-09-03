@@ -21,4 +21,5 @@ class CheckpointHook(Hook):
             "model": state.model.state_dict(),
             "optimizer": state.optimizer.state_dict(),
             "iter": state.iter,
+            "hooks": [{"name": hook.__class__.__name__, "state": hook.state_dict()} for hook in state.hooks]
         }, path)

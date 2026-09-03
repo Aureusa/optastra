@@ -20,6 +20,6 @@ def default_hooks(
         JSONWriterHook(output_dir=f"{output_dir}/logs", log_every=log_every)
     ]
     if resume:
-        default_hooks_list.append(ResumeHook(output_dir=output_dir, checkpoint_name=checkpoint_name))
+        default_hooks_list.insert(0, ResumeHook(output_dir=output_dir, checkpoint_name=checkpoint_name))
 
     return default_hooks_list

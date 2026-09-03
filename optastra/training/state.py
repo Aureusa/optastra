@@ -16,6 +16,7 @@ class TrainerState:
     storage: EventStorage
     device: torch.device
     current_batch: dict[str, Any] = field(default_factory=dict)
+    hooks: list[Any] = field(default_factory=list)
     iter: int = 0
     epoch: int = 0
     max_iter: int = 0
