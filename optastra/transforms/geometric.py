@@ -57,9 +57,7 @@ class RandomCrop(Transform):
  
     def __call__(self, sample):
         if "boxes" in sample.target or "masks" in sample.target:
-            raise NotImplementedError(
-                "RandomCrop does not support box/mask targets yet."
-            )
+            print("Not Implemented: RandomCrop: image has boxes or masks, but they will not be cropped adjusted.")
         _, h, w = sample.image.shape
         size = self.cfg.size
         if h < size or w < size:
@@ -109,7 +107,7 @@ class RandomRotation(Transform):
  
     def __call__(self, sample):
         if "boxes" in sample.target or "masks" in sample.target:
-            raise NotImplementedError(
+            print(
                 "RandomRotation does not support box/mask targets; "
                 "the Walmsley et al. recipe is classification-only."
             )

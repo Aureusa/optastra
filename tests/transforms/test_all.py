@@ -5,7 +5,7 @@ from optastra.data.sample import Sample
 
 POSSIBLE_TYPES = [torch.float32, torch.float64, torch.uint8, torch.int32, torch.int64]
 
-def _generate_sample(size=(3, 32, 32), dtype=torch.float32):
+def _generate_sample(size=(3, 232, 232), dtype=torch.float32):
     """Generates a random sample image tensor for testing."""
 
     def random_image():
@@ -24,7 +24,7 @@ def _generate_sample(size=(3, 32, 32), dtype=torch.float32):
         meta={"this": "is a test sample"},
     )
 
-def _generate_batch(batch_size=4, size=(3, 32, 32), dtype=torch.float32):
+def _generate_batch(batch_size=4, size=(3, 232, 232), dtype=torch.float32):
     """Generates a random batch of sample images for testing."""
     return {
         "inputs": torch.rand((batch_size, *size), dtype=dtype),
