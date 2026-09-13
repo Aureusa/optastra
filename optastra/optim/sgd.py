@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch.optim as optim
-from ._registry import register_optimizer
+
+from .base import Optimizer
 
 
 @dataclass
@@ -16,7 +17,7 @@ class SGD(optim.SGD):
         super().__init__(param_groups, lr=cfg.lr, momentum=cfg.momentum,
                          weight_decay=cfg.weight_decay, nesterov=cfg.nesterov)
 
-@register_optimizer(config=SGDConfig())
+@Optimizer.register(config=SGDConfig())
 def sgd(param_groups, cfg: SGDConfig) -> SGD:
     return SGD(param_groups, cfg)
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 
-from ._registry import register_scheduler
+from .scheduler_base import Scheduler
 
 
 @dataclass
@@ -34,6 +34,6 @@ class WarmupCosine(lr_scheduler.LambdaLR):
         return fn
     
 
-@register_scheduler(config=WarmupCosineConfig(total_steps=100_000))
+@Scheduler.register(config=WarmupCosineConfig(total_steps=100_000))
 def warmup_cosine(optimizer: optim.Optimizer, cfg: WarmupCosineConfig) -> lr_scheduler.LambdaLR:
     return WarmupCosine(optimizer, cfg)

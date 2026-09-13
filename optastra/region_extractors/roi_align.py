@@ -5,7 +5,6 @@ from torchvision.ops import roi_align as tv_roi_align
 
 from ..nn.features import FeatureMaps, FeatureSpec
 from .base import RegionExtractor
-from ._registry import register_region_extractor
 
 
 @dataclass
@@ -82,7 +81,7 @@ roi_align_configs = {
 }
 
 
-@register_region_extractor(config=roi_align_configs["roi_align"])
+@RegionExtractor.register(config=roi_align_configs["roi_align"])
 def roi_align(in_spec: FeatureSpec, cfg: ROIAlignConfig) -> ROIAlign:
     return ROIAlign(in_spec, cfg)
         

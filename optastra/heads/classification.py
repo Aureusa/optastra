@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Union
 
 from .base import Head
-from ._registry import register_head
 
 from ..nn.blocks.readout.mlp import MLP
 from ..nn.features import FeatureSpec, HeadOutput, FeatureMaps
@@ -63,7 +62,7 @@ classification_head_configs = {
 }
 
 
-@register_head(config=classification_head_configs["vanilla_classification_head"])
+@Head.register(config=classification_head_configs["vanilla_classification_head"])
 def vanilla_classification_head(in_spec: FeatureSpec, cfg: ClassificationHeadConfig) -> ClassificationHead:
     """
     Factory function to create a vanilla classification head.

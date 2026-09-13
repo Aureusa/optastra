@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch.optim as optim
-from ._registry import register_optimizer
+
+from .base import Optimizer
 
 
 @dataclass
@@ -16,6 +17,6 @@ class Adam(optim.Adam):
         super().__init__(param_groups, lr=cfg.lr, betas=cfg.betas, eps=cfg.eps,
                          weight_decay=cfg.weight_decay)
 
-@register_optimizer(config=AdamConfig())
+@Optimizer.register(config=AdamConfig())
 def adam(param_groups, cfg: AdamConfig) -> Adam:
     return Adam(param_groups, cfg)

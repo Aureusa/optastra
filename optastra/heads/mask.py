@@ -3,7 +3,6 @@ from typing import Sequence
 import torch.nn as nn
 
 from .base import Head
-from ._registry import register_head
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 from ..nn.features import FeatureMaps, FeatureSpec, HeadOutput
 
@@ -71,6 +70,6 @@ mask_head_configs = {
 }
 
 
-@register_head(config=mask_head_configs["mask_rcnn_head"])
+@Head.register(config=mask_head_configs["mask_rcnn_head"])
 def mask_rcnn_head(in_spec: FeatureSpec, cfg: MaskRCNNHeadConfig) -> MaskRCNNHead:
     return MaskRCNNHead(in_spec, cfg)

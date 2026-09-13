@@ -14,7 +14,6 @@ from ..nn.features import FeatureMaps, FeatureSpec
 from ..nn.blocks.transformer.patch_embed import PatchEmbedding
 from ..nn.blocks.transformer.transformer_block import TransformerBlock
 from ..nn.blocks.transformer.pos_embed import LearnedPosEmbed, SinusoidalPosEmbed, interpolate_pos_embed
-from ._registry import register_backbone
 
 
 __all__ = ["ViT"]
@@ -130,18 +129,18 @@ vit_configs = {
 }
 
 
-@register_backbone(config=vit_configs["vit_tiny"])
+@Backbone.register(config=vit_configs["vit_tiny"])
 def vit_tiny(cfg: ViTConfig) -> ViT:
     return ViT(cfg)
 
-@register_backbone(config=vit_configs["vit_small"])
+@Backbone.register(config=vit_configs["vit_small"])
 def vit_small(cfg: ViTConfig) -> ViT:
     return ViT(cfg)
 
-@register_backbone(config=vit_configs["vit_base"])
+@Backbone.register(config=vit_configs["vit_base"])
 def vit_base(cfg: ViTConfig) -> ViT:
     return ViT(cfg)
 
-@register_backbone(config=vit_configs["vit_large"])
+@Backbone.register(config=vit_configs["vit_large"])
 def vit_large(cfg: ViTConfig) -> ViT:
     return ViT(cfg)

@@ -1,10 +1,12 @@
 import pytest
 
-from optastra.backbones._registry import _registry, register_backbone
+from optastra.backbones.base import Backbone
+
+_registry = Backbone._registry
 
 
 def test_backbone_registry_registers_and_retrieves_entrypoint():
-    @register_backbone
+    @Backbone.register
     def UnitTestBackboneRegistryFn():
         return "ok"
 
@@ -17,20 +19,20 @@ def test_backbone_registry_registers_and_retrieves_entrypoint():
 def test_backbone_registry_default_config_and_duplicate_rejection():
     cfg = {"depth": 18}
 
-    @register_backbone(config=cfg)
+    @Backbone.register(config=cfg)
     def UnitTestBackboneWithConfig():
         return "ok"
 
     assert _registry.get_default_config("UnitTestBackboneWithConfig") == cfg
 
     with pytest.raises(ValueError, match="backbone UnitTestBackboneWithConfig already registered"):
-        @register_backbone(config=cfg)
+        @Backbone.register(config=cfg)
         def UnitTestBackboneWithConfig():
             return "dup"
 
 
 def test_backbone_registry_filtering_and_missing_entries():
-    @register_backbone
+    @Backbone.register
     def UnitTestBackboneForFilter():
         return "ok"
 

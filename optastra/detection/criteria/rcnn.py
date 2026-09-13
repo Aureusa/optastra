@@ -12,7 +12,6 @@ from ...nn.features import FeatureMaps, HeadOutput
 
 from ..base_matcher import Matcher
 from ..base_sampler import Sampler
-from .._registry import register_criterion
 from ..base_criterion import DetectionCriterion
 
 
@@ -265,6 +264,6 @@ rcnn_criterion_configs = {
 }
 
 
-@register_criterion(config=rcnn_criterion_configs["rcnn_criterion"])
+@DetectionCriterion.register(config=rcnn_criterion_configs["rcnn_criterion"])
 def rcnn_criterion(cfg: RCNNCriterionConfig) -> RCNNCriterion:
     return RCNNCriterion(cfg)

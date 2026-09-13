@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import fields, replace
-from typing import Any
 import torch
 import torch.nn as nn
 
-from ._registry import _registry
 from ..core.factory import Factory
+from ..core.registry import FamilyRegistry
 from ..nn.features import FeatureMaps, FeatureSpec
 
 
@@ -18,7 +16,7 @@ class Backbone(nn.Module, Factory["Backbone"], ABC):
     """A backbone only produces features -- it knows nothing about tasks."""
 
     out_spec: FeatureSpec  # type: ignore
-    _registry = _registry
+    _registry = FamilyRegistry("backbone")
 
     @classmethod
     def _post_create(cls, backbone: "Backbone") -> "Backbone":

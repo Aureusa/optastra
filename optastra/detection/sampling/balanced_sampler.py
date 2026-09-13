@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .._registry import register_sampler
+from ..base_sampler import Sampler
 
 
 @dataclass
@@ -45,11 +45,11 @@ sampler_configs = {
 }
 
 
-@register_sampler(config=sampler_configs["rcnn_balanced_sampler"])
+@Sampler.register(config=sampler_configs["rcnn_balanced_sampler"])
 def rcnn_balanced_sampler(cfg: BalancedSamplerConfig) -> BalancedSampler:
     return BalancedSampler(cfg)
 
 
-@register_sampler(config=sampler_configs["rpn_balanced_sampler"])
+@Sampler.register(config=sampler_configs["rpn_balanced_sampler"])
 def rpn_balanced_sampler(cfg: BalancedSamplerConfig) -> BalancedSampler:
     return BalancedSampler(cfg)

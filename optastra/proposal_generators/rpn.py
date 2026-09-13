@@ -13,7 +13,6 @@ from ..nn.blocks.geometry.boxes import (
 )
 from ..nn.features import FeatureMaps, FeatureSpec
 from .base import ProposalGenerator
-from ._registry import register_proposal_generator
 
 
 @dataclass
@@ -239,7 +238,7 @@ rpn_configs = {
 }
 
 
-@register_proposal_generator(config=rpn_configs["rpn"])
+@ProposalGenerator.register(config=rpn_configs["rpn"])
 def rpn(in_spec: FeatureSpec, cfg: RPNConfig) -> RPN:
     return RPN(in_spec, cfg)
     

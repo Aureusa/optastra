@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import torch
 
-from .._registry import register_postprocessor
 from ...data.sample import Sample
 from ...nn.blocks.geometry.boxes import apply_deltas_to_anchors, batched_nms, clip_boxes_to_image
 from ...nn.features import FeatureMaps, HeadOutput
+from ..base_postprocessor import Postprocessor
 
 
 @dataclass
@@ -119,6 +119,6 @@ postprocessor_configs = {
 }
 
 
-@register_postprocessor(config=postprocessor_configs["rcnn_postprocessor"])
+@Postprocessor.register(config=postprocessor_configs["rcnn_postprocessor"])
 def rcnn_postprocessor(cfg: RCNNPostprocessorConfig) -> RCNNPostprocessor:
     return RCNNPostprocessor(cfg)

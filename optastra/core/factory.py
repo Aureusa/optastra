@@ -38,6 +38,23 @@ class Factory(Generic[T]):
             raise ValueError(f"{cls._registry.family} '{name}' is not registered.")
 
     @classmethod
+    def register(cls, fn=None, *, config: Any | None = None):
+        """
+        Register a component under this family's registry. Use directly on
+        the family base class -- no need to import a registry module or a
+        separate register_x function:
+
+            @Transform.register
+            def my_transform(): ...
+
+            @Backbone.register(config=MyBackboneConfig())
+            def my_backbone(cfg): ...
+        """
+        def decorator(inner_fn):
+            return cls._registry.register(inner_fn, default_config=config)
+        return decorator(fn) if fn is not None else decorator
+
+    @classmethod
     def _build_cfg(cls, name: str, overrides: dict) -> Any:
         default_cfg = cls._registry.get_default_config(name)
         return replace(default_cfg, **overrides) if default_cfg is not None else None

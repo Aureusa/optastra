@@ -19,7 +19,6 @@ from ..nn.features import FeatureMaps, FeatureSpec
 from ..nn.blocks.convolution.convnext import ConvNeXtBlock, ConvNeXtDownsample
 from ..nn.blocks.convolution.layernorm2d import LayerNorm2d
 
-from ._registry import register_backbone
 
 
 __all__ = ["ConvNeXt"]
@@ -125,22 +124,22 @@ convnext_configs = {
 }
 
 
-@register_backbone(config=convnext_configs["convnext_tiny"])
+@Backbone.register(config=convnext_configs["convnext_tiny"])
 def convnext_tiny(cfg: ConvNeXtConfig) -> ConvNeXt:
     return ConvNeXt(cfg)
 
-@register_backbone(config=convnext_configs["convnext_small"])
+@Backbone.register(config=convnext_configs["convnext_small"])
 def convnext_small(cfg: ConvNeXtConfig) -> ConvNeXt:
     return ConvNeXt(cfg)
 
-@register_backbone(config=convnext_configs["convnext_base"])
+@Backbone.register(config=convnext_configs["convnext_base"])
 def convnext_base(cfg: ConvNeXtConfig) -> ConvNeXt:
     return ConvNeXt(cfg)
 
-@register_backbone(config=convnext_configs["convnext_large"])
+@Backbone.register(config=convnext_configs["convnext_large"])
 def convnext_large(cfg: ConvNeXtConfig) -> ConvNeXt:
     return ConvNeXt(cfg)
 
-@register_backbone(config=convnext_configs["convnext_xlarge"])
+@Backbone.register(config=convnext_configs["convnext_xlarge"])
 def convnext_xlarge(cfg: ConvNeXtConfig) -> ConvNeXt:
     return ConvNeXt(cfg)

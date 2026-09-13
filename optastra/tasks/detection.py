@@ -5,8 +5,7 @@ from typing import Any, Mapping
 
 import torch
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
-from ._registry import register_task
+from ..core.component_ref import ComponentRef, component_field, ComponentRefConfigMixin
 from .base import Stage, Task
 from ..detection import DetectionCriterion, Postprocessor
 from ..nn.features import FeatureMaps, HeadOutput
@@ -26,8 +25,8 @@ class DetectionTask(Task):
     def __init__(self, cfg: DetectionTaskConfig = DetectionTaskConfig()):
         self.cfg = cfg
 
-        self.criterion = resolve_component(cfg, "criterion", num_classes=cfg.num_classes)
-        self.postprocessor = resolve_component(cfg, "postprocessor")
+        self.criterion = cfg.criterion.resolve(DetectionCriterion, num_classes=cfg.num_classes)
+        self.postprocessor = cfg.postprocessor.resolve(Postprocessor)
 
     def validate_predictions(self, raw_preds: Any) -> None:
         if not isinstance(raw_preds, HeadOutput):
@@ -86,6 +85,6 @@ detection_task_configs = {
 }
 
 
-@register_task(config=detection_task_configs["detection_task"])
+@Task.register(config=detection_task_configs["detection_task"])
 def detection_task(cfg: DetectionTaskConfig) -> DetectionTask:
     return DetectionTask(cfg)

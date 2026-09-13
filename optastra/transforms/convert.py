@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import torch
 
 from .base import Transform
-from ._registry import register_transform
 
 
 __all__ = ["ToFloat"]
@@ -31,5 +30,5 @@ class ToFloat(Transform):
         return sample
 
 
-@register_transform(config=ToFloatConfig())
+@Transform.register(config=ToFloatConfig())
 def to_float(cfg): return ToFloat(cfg)

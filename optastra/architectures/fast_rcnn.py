@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import torch
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
+from ..core.component_ref import ComponentRef, component_field, ComponentRefConfigMixin
 from ..backbones.base import Backbone
 from ..heads.base import Head
 from ..necks.base import Neck
 from ..nn.features import HeadOutput
 from ..region_extractors.base import RegionExtractor
-from ._registry import register_architecture
 from .base import Architecture
 
 
@@ -31,16 +29,16 @@ class FastRCNN(Architecture):
         super().__init__()
         self.cfg = cfg
 
-        self.backbone = resolve_component(cfg, "backbone")
+        self.backbone = cfg.backbone.resolve(Backbone)
         if cfg.neck is not None:
-            self.neck = resolve_component(cfg, "neck", in_spec=self.backbone.out_spec)
+            self.neck = cfg.neck.resolve(Neck, in_spec=self.backbone.out_spec)
             detector_in_spec = self.neck.out_spec
         else:
             self.neck = None
             detector_in_spec = self.backbone.out_spec
 
-        self.region_extractor = resolve_component(cfg, "region_extractor", in_spec=detector_in_spec)
-        self.roi_head = resolve_component(cfg, "roi_box_head", in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.region_extractor = cfg.region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
+        self.roi_head = cfg.roi_box_head.resolve(Head, in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"FastRCNN Architecture:\n"
@@ -79,11 +77,11 @@ fast_rcnn_configs = {
 }
 
 
-@register_architecture(config=fast_rcnn_configs["fast_rcnn_r18_fpn"])
+@Architecture.register(config=fast_rcnn_configs["fast_rcnn_r18_fpn"])
 def fast_rcnn_r18_fpn(cfg: FastRCNNConfig) -> FastRCNN:
     return FastRCNN(cfg)
 
 
-@register_architecture(config=fast_rcnn_configs["fast_rcnn_r50_fpn"])
+@Architecture.register(config=fast_rcnn_configs["fast_rcnn_r50_fpn"])
 def fast_rcnn_r50_fpn(cfg: FastRCNNConfig) -> FastRCNN:
     return FastRCNN(cfg)

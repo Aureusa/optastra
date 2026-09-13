@@ -3,9 +3,9 @@ from dataclasses import dataclass, field, replace, fields
 from typing import Any, Mapping, Literal
 import torch
 
-from ._registry import _registry
 from ..nn.features import HeadOutput
 from ..core.factory import Factory
+from ..core.registry import FamilyRegistry
 
 
 __all__ = ["Task", "TaskStepOutput", "Stage"]
@@ -27,7 +27,7 @@ class TaskStepOutput:
 class Task(ABC, Factory["Task"]):
     required_fields: tuple[str, ...] = ()
     collate: str = "default_collate"
-    _registry = _registry
+    _registry = FamilyRegistry("task")
     
     def run_step(self, model, batch: Mapping[str, Any], stage: Stage = "train") -> TaskStepOutput:
         self.validate_batch(batch, stage)

@@ -1,10 +1,12 @@
 import pytest
 
-from optastra.tasks._registry import _registry, register_task
+from optastra.tasks.base import Task
+
+_registry = Task._registry
 
 
 def test_task_registry_registers_and_retrieves_entrypoint():
-    @register_task
+    @Task.register
     def UnitTestTaskRegistryFn():
         return "ok"
 
@@ -17,14 +19,14 @@ def test_task_registry_registers_and_retrieves_entrypoint():
 def test_task_registry_default_config_and_duplicate_rejection():
     cfg = {"label_smoothing": 0.1}
 
-    @register_task(config=cfg)
+    @Task.register(config=cfg)
     def UnitTestTaskWithConfig():
         return "ok"
 
     assert _registry.get_default_config("UnitTestTaskWithConfig") == cfg
 
     with pytest.raises(ValueError, match="task UnitTestTaskWithConfig already registered"):
-        @register_task(config=cfg)
+        @Task.register(config=cfg)
         def UnitTestTaskWithConfig():
             return "dup"
 

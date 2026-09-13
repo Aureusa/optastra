@@ -12,7 +12,6 @@ from .base import Backbone
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 from ..nn.features import FeatureSpec, FeatureMaps
 
-from ._registry import register_backbone
 
 
 __all__ = ["VGG"]
@@ -132,7 +131,7 @@ vgg_configs = {
 }
 
 
-@register_backbone(config=vgg_configs["vgg16"])
+@Backbone.register(config=vgg_configs["vgg16"])
 def vgg16(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG16 backbone.
 
@@ -140,7 +139,7 @@ def vgg16(cfg: VGGConfig) -> VGG:
     """
     return VGG(cfg)
 
-@register_backbone(config=vgg_configs["vgg19"])
+@Backbone.register(config=vgg_configs["vgg19"])
 def vgg19(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG19 backbone.
 
@@ -148,7 +147,7 @@ def vgg19(cfg: VGGConfig) -> VGG:
     """
     return VGG(cfg)
 
-@register_backbone(config=vgg_configs["vgg11"])
+@Backbone.register(config=vgg_configs["vgg11"])
 def vgg11(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG11 backbone.
 
@@ -156,7 +155,7 @@ def vgg11(cfg: VGGConfig) -> VGG:
     """
     return VGG(cfg)
 
-@register_backbone(config=vgg_configs["vgg13"])
+@Backbone.register(config=vgg_configs["vgg13"])
 def vgg13(cfg: VGGConfig) -> VGG:
     """Factory function to create a VGG13 backbone.
 

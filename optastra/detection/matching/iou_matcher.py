@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 import torch
 
-from .._registry import register_matcher
 from ...nn.blocks.geometry.boxes import pairwise_iou
+from ..base_matcher import Matcher
 
 
 @dataclass
@@ -68,11 +68,11 @@ matcher_configs = {
 }
 
 
-@register_matcher(config=matcher_configs["iou_matcher"])
+@Matcher.register(config=matcher_configs["iou_matcher"])
 def iou_matcher(cfg: IoUMatcherConfig) -> IoUMatcher:
     return IoUMatcher(cfg)
 
 
-@register_matcher(config=matcher_configs["rpn_iou_matcher"])
+@Matcher.register(config=matcher_configs["rpn_iou_matcher"])
 def rpn_iou_matcher(cfg: IoUMatcherConfig) -> IoUMatcher:
     return IoUMatcher(cfg)

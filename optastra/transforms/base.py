@@ -2,8 +2,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from ..data.sample import Sample
-from ._registry import _registry, _batch_registry
 from ..core.factory import Factory
+from ..core.registry import FamilyRegistry
 
 
 __all__ = ["Transform", "BatchTransform"]
@@ -14,7 +14,7 @@ class Transform(ABC, Factory["Transform"]):
     (a flip that moves pixels but not boxes silently corrupts detection).
     """
 
-    _registry = _registry
+    _registry = FamilyRegistry("transform")
 
     @abstractmethod
     def __call__(self, sample: Sample) -> Sample:
@@ -23,7 +23,7 @@ class Transform(ABC, Factory["Transform"]):
 class BatchTransform(ABC, Factory["BatchTransform"]):
     """Operates on an already-collated batch dict, not a single Sample --
     for augmentations that mix multiple samples together."""
-    _registry = _batch_registry  # separate registry: batch_transforms/_registry.py
+    _registry = FamilyRegistry("batch_transform")
 
     @abstractmethod
     def __call__(self, batch: dict) -> dict:

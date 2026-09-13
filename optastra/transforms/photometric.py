@@ -5,7 +5,6 @@ import torchvision.transforms.functional as F
 
 from .base import Transform
 from .functional import safe_solarize
-from ._registry import register_transform
 
 
 __all__ = ["ColorJitter", "RandomGrayscale", "GaussianBlur", "Solarize"]
@@ -97,14 +96,14 @@ class Solarize(Transform):
         return sample
 
 
-@register_transform(config=GaussianBlurConfig())
+@Transform.register(config=GaussianBlurConfig())
 def gaussian_blur(cfg): return GaussianBlur(cfg)
 
-@register_transform(config=SolarizeConfig())
+@Transform.register(config=SolarizeConfig())
 def solarize(cfg): return Solarize(cfg)
 
-@register_transform(config=RandomGrayscaleConfig())
+@Transform.register(config=RandomGrayscaleConfig())
 def random_grayscale(cfg): return RandomGrayscale(cfg)
 
-@register_transform(config=ColorJitterConfig())
+@Transform.register(config=ColorJitterConfig())
 def color_jitter(cfg): return ColorJitter(cfg)

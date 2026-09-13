@@ -15,7 +15,7 @@ class CriterionBasedTask(Task, ABC):
     preprocess_targets, forward_model) -- which genuinely differ per task
     family and don't belong behind a config flag."""
 
-    criterion: Any    # set by subclass __init__ via resolve_component(cfg, "criterion", ...)
+    criterion: Any    # set by subclass __init__ via cfg.criterion.resolve(SomeCriterionFactory, ...)
     postprocessor: Any | None = None
 
     def validate_predictions(self, raw_preds: Any) -> None:

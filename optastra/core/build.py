@@ -6,7 +6,7 @@ from ..heads import Head
 from ..tasks import Task
 from ..optim import Optimizer, Scheduler
 from .experiment import ExperimentConfig
-from .component_ref import ComponentRef, coerce_component_refs
+from .component_ref import ComponentRef, coerce_to_ref
 
 
 def build_experiment_from_config(cfg: ExperimentConfig) -> dict:
@@ -17,7 +17,6 @@ def build_experiment_from_config(cfg: ExperimentConfig) -> dict:
     return {"model": model, "task": task, "optimizer": optimizer, "scheduler": scheduler}
 
 
-@coerce_component_refs
 def build_sequential_model(
         backbone: ComponentRef,
         necks: list[ComponentRef],
@@ -28,21 +27,26 @@ def build_sequential_model(
     The model is structured as follows:
     Backbone-> Neck(s) -> Head
 
+    Each argument accepts a ComponentRef, or the friendly shorthand forms
+    coerce_to_ref() understands (a name string, a (name, overrides)
+    tuple, or a {"name":..., "overrides":...} dict).
+
     :param backbone: ComponentRef for the backbone.
     :param necks: List of ComponentRefs for the necks.
     :param head: ComponentRef for the head.
     """
     from torch import nn
+    backbone = coerce_to_ref(backbone)
+    necks = [coerce_to_ref(neck) for neck in (necks or [])]
+    head = coerce_to_ref(head)
+
     bb = Backbone.create(backbone.name, **backbone.overrides)
     out_spec = bb.out_spec
     neck_modules = []
-    if necks is None:
-        necks = []
-    else:
-        for neck in necks:
-            neck_module = Neck.create(neck.name, **neck.overrides, in_spec=out_spec)
-            neck_modules.append(neck_module)
-            out_spec = neck_module.out_spec
+    for neck in necks:
+        neck_module = Neck.create(neck.name, **neck.overrides, in_spec=out_spec)
+        neck_modules.append(neck_module)
+        out_spec = neck_module.out_spec
     head_module = Head.create(head.name, **head.overrides, in_spec=out_spec)
     return nn.Sequential(
         *([bb] + neck_modules + [head_module])

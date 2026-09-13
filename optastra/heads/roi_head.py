@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._registry import register_head
 from .base import Head
 from ..nn.blocks.readout.mlp import MLP
 from ..nn.features import FeatureMaps, FeatureSpec, HeadOutput
@@ -77,6 +76,6 @@ roi_box_head_configs = {
 }
 
 
-@register_head(config=roi_box_head_configs["roi_box_head"])
+@Head.register(config=roi_box_head_configs["roi_box_head"])
 def roi_box_head(in_spec: FeatureSpec, cfg: ROIBoxHeadConfig) -> ROIBoxHead:
     return ROIBoxHead(in_spec, cfg)

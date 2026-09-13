@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 import torch.optim as optim
 
-from ._registry import register_optimizer
 from .base import Optimizer
 
 
@@ -24,6 +23,6 @@ class AdamW(Optimizer, optim.AdamW):
         )
         self.cfg = cfg
 
-@register_optimizer(config=AdamWConfig())
+@Optimizer.register(config=AdamWConfig())
 def adamw(param_groups, cfg: AdamWConfig) -> optim.AdamW:
     return AdamW(param_groups, cfg=cfg)

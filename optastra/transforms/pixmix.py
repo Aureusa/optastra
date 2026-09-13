@@ -17,7 +17,6 @@ import torch
 
 from .base import Transform
 from .ops import PHOTOMETRIC_OPS
-from ._registry import register_transform
 
 
 __all__ = ["PixMix"]
@@ -85,6 +84,6 @@ class PixMix(Transform):
         return sample
 
 
-@register_transform(config=PixMixConfig())
+@Transform.register(config=PixMixConfig())
 def pixmix(cfg): return PixMix(cfg)
 

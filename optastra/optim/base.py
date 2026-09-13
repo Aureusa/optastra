@@ -3,9 +3,9 @@ from dataclasses import replace
 import torch.nn as nn
 import torch.optim as optim
 
-from ._registry import _registry
 from .param_groups import build_param_groups, ParamGroupConfig
 from ..core.factory import Factory
+from ..core.registry import FamilyRegistry
 
 
 __all__ = ["Optimizer"]
@@ -15,7 +15,7 @@ class Optimizer(Factory["Optimizer"]):
     """Factory only -- doesn't wrap or replace torch.optim.Optimizer at runtime,
     it just constructs one correctly, including param groups."""
 
-    _registry = _registry
+    _registry = FamilyRegistry("optimizer")
 
     @classmethod
     def create(

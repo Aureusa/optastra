@@ -1,15 +1,10 @@
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 import torch
 
-from ..proposal_generators.base import ProposalGenerator
-
-from ..core.component_ref import ComponentRef, resolve_component, component_field
-from ..backbones import Backbone
-from ..necks.base import Neck
+from ..core.component_ref import ComponentRef, component_field
 from ..heads.base import Head
 from ..nn.features import HeadOutput
-from ._registry import register_architecture
+from .base import Architecture
 from .faster_rcnn import FasterRCNN, FasterRCNNConfig
 from ..region_extractors.base import RegionExtractor
 
@@ -30,8 +25,8 @@ class MaskRCNN(FasterRCNN):
         self.cfg = cfg
         detector_in_spec = self.neck.out_spec if self.neck is not None else self.backbone.out_spec
 
-        self.mask_region_extractor = resolve_component(cfg, "mask_region_extractor", in_spec=detector_in_spec)
-        self.mask_head = resolve_component(cfg, "mask_head", in_spec=self.mask_region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.mask_region_extractor = cfg.mask_region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
+        self.mask_head = cfg.mask_head.resolve(Head, in_spec=self.mask_region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"MaskRCNN Architecture:\n"
@@ -86,21 +81,21 @@ mask_rcnn_configs = {
 }
 
 
-@register_architecture(config=mask_rcnn_configs["mask_rcnn_r18_fpn"])
+@Architecture.register(config=mask_rcnn_configs["mask_rcnn_r18_fpn"])
 def mask_rcnn_r18_fpn(cfg: MaskRCNNConfig) -> MaskRCNN:
     return MaskRCNN(cfg)
 
 
-@register_architecture(config=mask_rcnn_configs["mask_rcnn_r50_fpn"])
+@Architecture.register(config=mask_rcnn_configs["mask_rcnn_r50_fpn"])
 def mask_rcnn_r50_fpn(cfg: MaskRCNNConfig) -> MaskRCNN:
     return MaskRCNN(cfg)
 
 
-@register_architecture(config=mask_rcnn_configs["mask_rcnn_r18_c5"])
+@Architecture.register(config=mask_rcnn_configs["mask_rcnn_r18_c5"])
 def mask_rcnn_r18_c5(cfg: MaskRCNNConfig) -> MaskRCNN:
     return MaskRCNN(cfg)
 
 
-@register_architecture(config=mask_rcnn_configs["mask_rcnn_r50_c5"])
+@Architecture.register(config=mask_rcnn_configs["mask_rcnn_r50_c5"])
 def mask_rcnn_r50_c5(cfg: MaskRCNNConfig) -> MaskRCNN:
     return MaskRCNN(cfg)

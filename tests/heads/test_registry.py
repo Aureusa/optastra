@@ -1,10 +1,12 @@
 import pytest
 
-from optastra.heads._registry import _registry, register_head
+from optastra.heads.base import Head
+
+_registry = Head._registry
 
 
 def test_head_registry_registers_and_retrieves_entrypoint():
-    @register_head
+    @Head.register
     def UnitTestHeadRegistryFn(*args, **kwargs):
         return args, kwargs
 
@@ -17,14 +19,14 @@ def test_head_registry_registers_and_retrieves_entrypoint():
 def test_head_registry_default_config_and_duplicate_rejection():
     cfg = {"num_classes": 11}
 
-    @register_head(config=cfg)
+    @Head.register(config=cfg)
     def UnitTestHeadWithConfig(*args, **kwargs):
         return args, kwargs
 
     assert _registry.get_default_config("UnitTestHeadWithConfig") == cfg
 
     with pytest.raises(ValueError, match="head UnitTestHeadWithConfig already registered"):
-        @register_head(config=cfg)
+        @Head.register(config=cfg)
         def UnitTestHeadWithConfig(*args, **kwargs):
             return None
 

@@ -22,18 +22,8 @@ class CollateFn(Factory["CollateFn"]):
         """
         return cls._registry.get_entrypoint(name, **kwargs)
 
-    @classmethod
-    def make_decorator(cls):
-        """
-        Returns a decorator that registers a collate function with the registry.
-        """
-        return cls._registry.make_decorator()
 
-
-register_collate = CollateFn.make_decorator()
-
-
-@register_collate
+@CollateFn.register
 def default_collate(samples: list[Sample]) -> dict:
     """
     Default collate function that stacks images and targets into tensors.
@@ -42,7 +32,7 @@ def default_collate(samples: list[Sample]) -> dict:
     return dense(samples)  # Use the dense collate as the default behavior
 
 
-@register_collate
+@CollateFn.register
 def dense(samples: list[Sample]) -> dict:
     """
     Classification, regression, dense segmentation -- anything where
@@ -54,7 +44,7 @@ def dense(samples: list[Sample]) -> dict:
     return {"inputs": images, "targets": targets}
 
 
-@register_collate
+@CollateFn.register
 def ragged(samples: list[Sample]) -> dict:
     """
     Detection, instance segmentation -- variable-length targets per image,
@@ -66,7 +56,7 @@ def ragged(samples: list[Sample]) -> dict:
     return {"inputs": images, "targets": targets}
 
 
-@register_collate
+@CollateFn.register
 def multiview(samples: list[Sample]) -> dict:
     """
     Self-supervised algorithms -- N augmented views per image, no labels.

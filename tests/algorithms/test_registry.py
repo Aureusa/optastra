@@ -1,10 +1,12 @@
 import pytest
 
-from optastra.tasks._registry import _registry, register_task
+from optastra.algorithms.base import Algorithm
+
+_registry = Algorithm._registry
 
 
 def test_algorithms_register_through_shared_task_registry():
-    @register_task
+    @Algorithm.register
     def UnitTestAlgorithmRegistryFn():
         return "ok"
 
@@ -17,14 +19,14 @@ def test_algorithms_register_through_shared_task_registry():
 def test_algorithms_support_default_config_and_duplicate_rejection_via_task_registry():
     cfg = {"temperature": 0.2}
 
-    @register_task(config=cfg)
+    @Algorithm.register(config=cfg)
     def UnitTestAlgorithmWithConfig():
         return "ok"
 
     assert _registry.get_default_config("UnitTestAlgorithmWithConfig") == cfg
 
     with pytest.raises(ValueError, match="task UnitTestAlgorithmWithConfig already registered"):
-        @register_task(config=cfg)
+        @Algorithm.register(config=cfg)
         def UnitTestAlgorithmWithConfig():
             return "dup"
 

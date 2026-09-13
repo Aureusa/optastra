@@ -1,42 +1,11 @@
 from __future__ import annotations
-from functools import wraps
-from inspect import signature
 from dataclasses import dataclass, field, fields as dc_fields, is_dataclass, replace
-from typing import Any, get_type_hints, get_origin, get_args
+from typing import Any
 
 from .factory import Factory
 
 
-def _coerce_component_annotation(value, annotation):
-    """Recursively coerce values based on a type annotation."""
-
-    if annotation is ComponentRef:
-        return _coerce_to_ref(value)
-
-    origin = get_origin(annotation)
-
-    # list[ComponentRef], tuple[ComponentRef], set[ComponentRef], etc.
-    if origin in (list, tuple, set):
-        (item_type,) = get_args(annotation)
-        if value is None:
-            return None
-        return origin(
-            _coerce_component_annotation(item, item_type)
-            for item in value
-        )
-
-    # dict[str, ComponentRef]
-    if origin is dict:
-        key_type, value_type = get_args(annotation)
-        return {
-            k: _coerce_component_annotation(v, value_type)
-            for k, v in value.items()
-        }
-
-    return value
-
-
-def _coerce_to_ref(value: Any) -> Any:
+def coerce_to_ref(value: Any) -> Any:
     """Accepts the friendly forms and normalizes to ComponentRef.
     None passes through (valid for optional fields)."""
     # Already a ComponentRef, or optional None
@@ -62,35 +31,6 @@ def _coerce_to_ref(value: Any) -> Any:
     )
 
 
-def coerce_component_refs(fn):
-    """
-    When applied to a function, automatically coerces any ComponentRef-typed
-    arguments from friendly shorthands (name string, (name, overrides) tuple,
-    or {"name":..., "overrides":...} dict) into a ComponentRef instance
-    before calling the function. This is useful for functions that accept
-    ComponentRef arguments, so that callers don't have to import ComponentRef
-    or construct it manually.
-    """
-    sig = signature(fn)
-    hints = get_type_hints(fn)
-
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-
-        for name, value in bound.arguments.items():
-            annotation = hints.get(name)
-            if annotation is not None:
-                bound.arguments[name] = _coerce_component_annotation(
-                    value, annotation
-                )
-
-        return fn(*bound.args, **bound.kwargs)
-
-    return wrapper
-
-
 def component_field(
         factory: type[Factory],
         *,
@@ -100,10 +40,12 @@ def component_field(
         **kwargs
     ) -> Any:
     """
-    Declares a ComponentRef field AND which Factory resolves it -- one
-    place, read by resolve_component() at build time and by
-    resolve_config() at describe time. They can never disagree because
-    there's only one mapping, not two.
+    Declares a ComponentRef field and which Factory describes it -- read by
+    resolve_config()/_serialize_config() to expand this field's defaults
+    when printing or dumping a config to YAML. Building is a separate,
+    explicit step: the call site does `cfg.<field>.resolve(SomeFactory)`
+    directly (it already knows which Factory it needs -- that's not
+    something that has to be rediscovered through this metadata).
     """
     if optional and default_name is None:
         maker = lambda: None
@@ -117,8 +59,7 @@ class ComponentRefConfigMixin:
     Mixin: coerces every component_field() on this dataclass from a
     friendly shorthand into a real ComponentRef, once, right after
     construction -- so callers never have to import ComponentRef for the
-    common case. The factory metadata is preserved for resolve_component() and
-    resolve_config() to use.
+    common case.
 
     This is used for configs of components that themselves have component fields,
     e.g. Faster RCNN has a backbone and a head field, both of which are ComponentRefs.
@@ -128,7 +69,7 @@ class ComponentRefConfigMixin:
             if "factory" not in f.metadata:
                 continue
             current = getattr(self, f.name)
-            coerced = _coerce_to_ref(current)
+            coerced = coerce_to_ref(current)
             if getattr(type(self), "__dataclass_fields__", None) and self.__dataclass_params__.frozen:
                 object.__setattr__(self, f.name, coerced)
             else:
@@ -153,29 +94,6 @@ class ComponentRef:
             return {"name": self.name, **_serialize_config(self.overrides)}
         merged = replace(default, **self.overrides)   # same op Factory.create already uses
         return {"name": self.name, **_serialize_config(merged)}
-
-
-def resolve_component(cfg: Any, field_name: str, **extras) -> Any:
-    """
-    Resolves cfg.<field_name> using the Factory declared via
-    component_field() on that field. Same mapping resolve_config() reads --
-    this is the single source of truth for both build and describe.
-    """
-    value = getattr(cfg, field_name)
-    if value is None:
-        return None
-    if not isinstance(value, ComponentRef):
-        raise TypeError(
-            f"{type(cfg).__name__}.{field_name} is a {type(value).__name__}, not a ComponentRef "
-            f"(got {value!r}). If you're constructing a config instance, use ComponentRef(...) "
-            f"for the value -- component_field(...) is only for declaring the field in the "
-            f"dataclass body, never for supplying a value."
-        )
-    f = next(f for f in dc_fields(cfg) if f.name == field_name)
-    factory = f.metadata.get("factory")
-    if factory is None:
-        raise ValueError(f"'{field_name}' on {type(cfg).__name__} has no declared factory; use component_field().")
-    return value.resolve(factory, **extras)
 
 
 def _serialize_config(value: Any) -> Any:

@@ -10,7 +10,6 @@ import random
 
 from .base import Transform
 from .ops import ALL_OPS
-from ._registry import register_transform
 
 
 __all__ = ["AutoAugment"]
@@ -77,17 +76,17 @@ class AutoAugment(Transform):
         return sample
 
 
-@register_transform(config=AutoAugmentConfig())
+@Transform.register(config=AutoAugmentConfig())
 def auto_augment(cfg): return AutoAugment(cfg)
 
 
-@register_transform(config=AutoAugmentConfig())
+@Transform.register(config=AutoAugmentConfig())
 def auto_augment_weak(cfg):
     cfg.magnitude_scale = 0.5
     return AutoAugment(cfg)
 
  
-@register_transform(config=AutoAugmentConfig())
+@Transform.register(config=AutoAugmentConfig())
 def auto_augment_strong(cfg):
     cfg.magnitude_scale = 1.3
     return AutoAugment(cfg)

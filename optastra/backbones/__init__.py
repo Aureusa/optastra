@@ -6,4 +6,3 @@ from .efficientnet import *
 from .vgg import *
 from .vit import *
 
-from ._registry import register_backbone

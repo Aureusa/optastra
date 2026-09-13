@@ -5,7 +5,6 @@ import torchvision.transforms.functional as F
 from torchvision.transforms import InterpolationMode
 
 from .base import Transform
-from ._registry import register_transform
 from ..nn.blocks.geometry.boxes import flip_boxes
 
 
@@ -240,29 +239,29 @@ class RandomVFlip(Transform):
         return sample
     
 
-@register_transform(config=CropConfig())
+@Transform.register(config=CropConfig())
 def crop(cfg: CropConfig): return Crop(cfg)
 
 
-@register_transform(config=RandomCropConfig())
+@Transform.register(config=RandomCropConfig())
 def random_crop(cfg: RandomCropConfig): return RandomCrop(cfg)
 
 
-@register_transform(config=RandomRotationConfig())
+@Transform.register(config=RandomRotationConfig())
 def random_rotation(cfg: RandomRotationConfig): return RandomRotation(cfg)
 
 
-@register_transform(config=ResizeConfig())
+@Transform.register(config=ResizeConfig())
 def resize(cfg: ResizeConfig): return Resize(cfg)
 
 
-@register_transform(config=RandomResizedCropConfig())
+@Transform.register(config=RandomResizedCropConfig())
 def random_resized_crop(cfg): return RandomResizedCrop(cfg)
 
 
-@register_transform(config=RandomFlipConfig())
+@Transform.register(config=RandomFlipConfig())
 def random_hflip(cfg: RandomFlipConfig): return RandomHFlip(cfg)
 
 
-@register_transform(config=RandomFlipConfig())
+@Transform.register(config=RandomFlipConfig())
 def random_vflip(cfg: RandomFlipConfig): return RandomVFlip(cfg)

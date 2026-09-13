@@ -13,7 +13,7 @@ alpha * beta^2 * gamma^2 ~= 2, so doubling phi ~doubles FLOPs).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import math
 import torch
 import torch.nn as nn
@@ -23,7 +23,6 @@ from ..nn.features import FeatureMaps, FeatureSpec
 from ..nn.blocks.convolution.mbconv import MBConvBlock
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
-from ._registry import register_backbone
 
 
 __all__ = ["EfficientNet"]
@@ -167,34 +166,34 @@ efficientnet_configs = {
 }
 
 
-@register_backbone(config=efficientnet_configs["efficientnet_b0"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b0"])
 def efficientnet_b0(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b1"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b1"])
 def efficientnet_b1(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b2"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b2"])
 def efficientnet_b2(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b3"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b3"])
 def efficientnet_b3(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b4"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b4"])
 def efficientnet_b4(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b5"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b5"])
 def efficientnet_b5(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b6"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b6"])
 def efficientnet_b6(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)
 
-@register_backbone(config=efficientnet_configs["efficientnet_b7"])
+@Backbone.register(config=efficientnet_configs["efficientnet_b7"])
 def efficientnet_b7(cfg: EfficientNetConfig) -> EfficientNet:
     return EfficientNet(cfg)

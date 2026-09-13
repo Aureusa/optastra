@@ -9,3 +9,7 @@ main.py
 
 # Runs
 runs/
+
+.github/workflows/
+
+site/

@@ -9,7 +9,6 @@ import random
 
 from .base import Transform
 from .ops import ALL_OPS, PHOTOMETRIC_OPS
-from ._registry import register_transform
 
 
 __all__ = ["TrivialAugment"]
@@ -38,18 +37,18 @@ class TrivialAugment(Transform):
         return sample
 
 
-@register_transform(config=TrivialAugmentConfig())
+@Transform.register(config=TrivialAugmentConfig())
 def trivial_augment(cfg): return TrivialAugment(cfg)
 
 
-@register_transform(config=TrivialAugmentConfig())
+@Transform.register(config=TrivialAugmentConfig())
 def trivial_augment_weak(cfg):
     cfg.magnitude_min = 0.0
     cfg.magnitude_max = 4.0
     return TrivialAugment(cfg)
  
  
-@register_transform(config=TrivialAugmentConfig())
+@Transform.register(config=TrivialAugmentConfig())
 def trivial_augment_strong(cfg):
     cfg.magnitude_min = 6.0
     cfg.magnitude_max = 10.0

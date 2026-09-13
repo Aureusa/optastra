@@ -16,7 +16,6 @@ from ..nn.blocks.convolution.lrn import LocalResponseNorm
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 from ..nn.features import FeatureSpec, FeatureMaps
 
-from ._registry import register_backbone
 
 
 __all__ = ["AlexNetBackbone"]
@@ -81,7 +80,7 @@ alexnet_configs = {
 }
 
 
-@register_backbone(config=alexnet_configs["alexnet"])
+@Backbone.register(config=alexnet_configs["alexnet"])
 def alexnet(cfg: AlexNetConfig) -> AlexNetBackbone:
     """
     Factory function to create an AlexNet backbone.

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Union
 
 from .base import Head
-from ._registry import register_head
 from ..nn.blocks.readout.mlp import MLP
 from ..nn.features import FeatureSpec, HeadOutput, FeatureMaps
 
@@ -51,7 +50,7 @@ regression_head_configs = {
 }
 
 
-@register_head(config=regression_head_configs["vanilla_box_regression_head"])
+@Head.register(config=regression_head_configs["vanilla_box_regression_head"])
 def vanilla_box_regression_head(
     in_spec: FeatureSpec,
     cfg: BBoxRegressionHeadConfig,

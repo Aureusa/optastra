@@ -3,7 +3,6 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ._registry import register_task
 from .base import Task, Stage
 from ..nn.features import HeadOutput
 
@@ -85,6 +84,6 @@ classification_task_config = {
     "classification_task": ClassificationTaskConfig(label_smoothing=0.1, reduction="mean")
 }
 
-@register_task(config=classification_task_config["classification_task"])
+@Task.register(config=classification_task_config["classification_task"])
 def classification_task(cfg: ClassificationTaskConfig) -> ClassificationTask:
     return ClassificationTask(cfg)

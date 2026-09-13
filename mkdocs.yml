@@ -1,0 +1,36 @@
+site_name: Optastra
+site_description: A modular computer vision framework built on PyTorch.
+repo_url: https://github.com/Aureusa/optastra
+repo_name: Aureusa/optastra
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Concepts: concepts.md
+  - Extending: extending.md
+  - API Reference: api.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["optastra"]
+          options:
+            show_source: true
+            show_root_heading: true
+            heading_level: 3
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.highlight

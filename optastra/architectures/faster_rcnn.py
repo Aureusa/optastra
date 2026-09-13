@@ -1,8 +1,7 @@
 import torch
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
-from ..core.component_ref import ComponentRef, resolve_component, component_field, ComponentRefConfigMixin
+from ..core.component_ref import ComponentRef, component_field, ComponentRefConfigMixin
 from ..backbones.base import Backbone
 from ..necks.base import Neck
 from ..heads.base import Head
@@ -10,7 +9,6 @@ from ..nn.features import FeatureMaps, HeadOutput
 from ..proposal_generators.base import ProposalGenerator
 from ..region_extractors.base import RegionExtractor
 from .base import Architecture
-from ._registry import register_architecture
 
 
 @dataclass
@@ -31,18 +29,18 @@ class FasterRCNN(Architecture):
         super().__init__()
         self.cfg = cfg
 
-        self.backbone = resolve_component(cfg, "backbone")
+        self.backbone = cfg.backbone.resolve(Backbone)
 
         if cfg.neck is not None:
-            self.neck = resolve_component(cfg, "neck", in_spec=self.backbone.out_spec)
+            self.neck = cfg.neck.resolve(Neck, in_spec=self.backbone.out_spec)
             detector_in_spec = self.neck.out_spec
         else:
             self.neck = None
             detector_in_spec = self.backbone.out_spec
 
-        self.proposal_generator = resolve_component(cfg, "proposal_generator", in_spec=detector_in_spec)
-        self.region_extractor = resolve_component(cfg, "region_extractor", in_spec=detector_in_spec)
-        self.roi_head = resolve_component(cfg, "roi_box_head", in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
+        self.proposal_generator = cfg.proposal_generator.resolve(ProposalGenerator, in_spec=detector_in_spec)
+        self.region_extractor = cfg.region_extractor.resolve(RegionExtractor, in_spec=detector_in_spec)
+        self.roi_head = cfg.roi_box_head.resolve(Head, in_spec=self.region_extractor.out_spec, num_classes=cfg.num_classes)
 
     def info(self) -> str:
         info_str = f"FasterRCNN Architecture:\n"
@@ -125,22 +123,22 @@ faster_rcnn_configs = {
 }
 
 
-@register_architecture(config=faster_rcnn_configs["faster_rcnn_r18_fpn"])
+@Architecture.register(config=faster_rcnn_configs["faster_rcnn_r18_fpn"])
 def faster_rcnn_r18_fpn(cfg: FasterRCNNConfig) -> FasterRCNN:
     return FasterRCNN(cfg)
 
 
-@register_architecture(config=faster_rcnn_configs["faster_rcnn_r50_fpn"])
+@Architecture.register(config=faster_rcnn_configs["faster_rcnn_r50_fpn"])
 def faster_rcnn_r50_fpn(cfg: FasterRCNNConfig) -> FasterRCNN:
     return FasterRCNN(cfg)
 
 
-@register_architecture(config=faster_rcnn_configs["faster_rcnn_r18_c5"])
+@Architecture.register(config=faster_rcnn_configs["faster_rcnn_r18_c5"])
 def faster_rcnn_r18_c5(cfg: FasterRCNNConfig) -> FasterRCNN:
     return FasterRCNN(cfg)
 
 
-@register_architecture(config=faster_rcnn_configs["faster_rcnn_r50_c5"])
+@Architecture.register(config=faster_rcnn_configs["faster_rcnn_r50_c5"])
 def faster_rcnn_r50_c5(cfg: FasterRCNNConfig) -> FasterRCNN:
     return FasterRCNN(cfg)
     

@@ -1,15 +1,14 @@
 import pytest
 
-from optastra.optim._registry import (
-    _registry,
-    _scheduler_registry,
-    register_optimizer,
-    register_scheduler,
-)
+from optastra.optim.base import Optimizer
+from optastra.optim.scheduler_base import Scheduler
+
+_registry = Optimizer._registry
+_scheduler_registry = Scheduler._registry
 
 
 def test_optimizer_registry_registers_and_lists_components():
-    @register_optimizer
+    @Optimizer.register
     def UnitTestOptimizerRegistryFn(param_groups, cfg):
         return (param_groups, cfg)
 
@@ -22,20 +21,20 @@ def test_optimizer_registry_registers_and_lists_components():
 def test_optimizer_registry_default_config_and_duplicate_rejection():
     cfg = {"lr": 0.1}
 
-    @register_optimizer(config=cfg)
+    @Optimizer.register(config=cfg)
     def UnitTestOptimizerWithConfig(param_groups, cfg):
         return (param_groups, cfg)
 
     assert _registry.get_default_config("UnitTestOptimizerWithConfig") == cfg
 
     with pytest.raises(ValueError, match="optimizer UnitTestOptimizerWithConfig already registered"):
-        @register_optimizer(config=cfg)
+        @Optimizer.register(config=cfg)
         def UnitTestOptimizerWithConfig(param_groups, cfg):
             return (param_groups, cfg)
 
 
 def test_scheduler_registry_registers_and_lists_components():
-    @register_scheduler
+    @Scheduler.register
     def UnitTestSchedulerRegistryFn(optimizer, cfg):
         return (optimizer, cfg)
 
@@ -47,13 +46,13 @@ def test_scheduler_registry_registers_and_lists_components():
 def test_scheduler_registry_default_config_and_duplicate_rejection():
     cfg = {"total_steps": 10}
 
-    @register_scheduler(config=cfg)
+    @Scheduler.register(config=cfg)
     def UnitTestSchedulerWithConfig(optimizer, cfg):
         return (optimizer, cfg)
 
     assert _scheduler_registry.get_default_config("UnitTestSchedulerWithConfig") == cfg
 
     with pytest.raises(ValueError, match="scheduler UnitTestSchedulerWithConfig already registered"):
-        @register_scheduler(config=cfg)
+        @Scheduler.register(config=cfg)
         def UnitTestSchedulerWithConfig(optimizer, cfg):
             return (optimizer, cfg)

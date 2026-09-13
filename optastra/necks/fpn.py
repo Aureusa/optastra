@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .base import Neck
-from ._registry import register_neck
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 from ..nn.features import FeatureSpec, FeatureMaps
 
@@ -106,7 +105,7 @@ fpn_configs = {
 }
 
 
-@register_neck(config=fpn_configs["fpn"])
+@Neck.register(config=fpn_configs["fpn"])
 def fpn(in_spec: FeatureSpec, cfg: FPNConfig) -> FPN:
     """Factory function to create an FPN neck.
 

@@ -2,6 +2,21 @@
 
 > **A modular computer vision framework built on PyTorch, focused on composable architectures, clean implementations, and research reproducibility.**
 
+## Getting Started
+
+```bash
+pip install -e .
+python examples/01_quickstart_classification.py
+```
+
+- **[Getting Started](docs/getting-started.md)** -- install, first `Backbone.create(...)`, first training step.
+- **[Concepts](docs/concepts.md)** -- the core abstractions and how Registry -> Factory -> ComponentRef fit together.
+- **[Extending](docs/extending.md)** -- copy-pasteable recipes for adding a new backbone, transform, task, or hook.
+- **[API Reference](docs/api.md)** -- generated from docstrings (`pip install -e ".[docs]" && mkdocs serve`).
+- **[examples/](examples/)** -- runnable, CPU-only usage scripts.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** -- the registration convention every family follows.
+- **[ROADMAP.md](ROADMAP.md)** -- usability/extensibility roadmap and known gaps.
+
 ## Motivation
 
 The idea for this project grew out of my work in computer vision for astronomy. While there are many excellent computer vision frameworks available, they generally fall into one of three categories:
@@ -210,53 +225,47 @@ Every implementation should remain readable.
 
 # Repository Structure
 
+The layout below reflects the current codebase (see
+[`docs/concepts.md`](docs/concepts.md) for how these pieces interact and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the convention every family
+follows):
+
 ```text
 optastra/
 
+    core/                   registry, factory, ComponentRef, ExperimentConfig
     nn/
-        blocks/
-            /ideas
+        features.py         FeatureSpec / FeatureMaps / HeadOutput
+        blocks/             reusable layers (residual, attention, pooling, ...)
 
-    backbones/
-        resnet.py
-        vit.py
-        ...
+    backbones/              resnet.py, vit.py, convnext.py, efficientnet.py, ...
+    necks/                  fpn.py, pool.py
+    heads/                  classification.py, regression.py, mask.py, roi_head.py
+    tasks/                  classification.py, detection.py
+    algorithms/             simclr/, byol/  (self-supervised pretraining)
+    architectures/          fast_rcnn.py, faster_rcnn.py, masked_rcnn.py
 
-    necks/
+    proposal_generators/    rpn.py
+    region_extractors/      roi_align.py
+    detection/              criteria/, matching/, postprocessing/, sampling/
 
-    heads/
+    optim/                  adam.py, adamw.py, sgd.py, warmup_cosine.py
+    transforms/             augmix.py, randaugment.py, mixup.py, cutmix.py, ...
+    data/                   Sample, collate, dataloader, COCO loading
 
-    tasks/
-        classification/
-        regression/
-        detection/
-        segmentation/
-
-    algorithms/
-        mae/
-        dinov2/
-        clip/
-        simclr/
-
-    models/
-        classification/
-        detection/
-        segmentation/
-        regression/
-
-    training/
-
-    losses/
-
-    datasets/
-
-    transforms/
-
-    metrics/
+    training/               Trainer, TrainerState, EventStorage
+        hooks/              checkpoint, eval, scheduler, early stopping, ...
 
     visualization/
 
+docs/                       MkDocs site (getting started, concepts, extending, API reference)
+examples/                   runnable, CPU-only usage scripts
+tests/                      mirrors the package layout above, one dir per family
 ```
+
+This is a living structure -- new families get their own top-level
+directory following the same `base.py` + one-file-per-component + one
+`Factory.register` decorator pattern described in `CONTRIBUTING.md`.
 
 ---
 

@@ -12,7 +12,6 @@ import torch
 
 from .base import Transform
 from .ops import PHOTOMETRIC_OPS
-from ._registry import register_transform
 
 
 __all__ = ["AugMix"]
@@ -53,11 +52,11 @@ class AugMix(Transform):
         return sample
 
 
-@register_transform(config=AugMixConfig())
+@Transform.register(config=AugMixConfig())
 def augmix(cfg): return AugMix(cfg)
 
 
-@register_transform(config=AugMixConfig())
+@Transform.register(config=AugMixConfig())
 def augmix_weak(cfg):
     cfg.num_chains = 2
     cfg.chain_depth = 1
@@ -65,7 +64,7 @@ def augmix_weak(cfg):
     return AugMix(cfg)
  
  
-@register_transform(config=AugMixConfig())
+@Transform.register(config=AugMixConfig())
 def augmix_strong(cfg):
     cfg.num_chains = 3
     cfg.chain_depth = 3

@@ -51,11 +51,18 @@ notebook = [
     "jupyter",
 ]
 
+# Needed only for building the documentation site (mkdocs serve / build).
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+]
+
 # Convenience bundle: everything needed to develop optastra itself
-# (run tests, use notebooks, load example datasets). NOT installed by
-# default for downstream users who just `pip install optastra`.
+# (run tests, use notebooks, load example datasets, build docs). NOT
+# installed by default for downstream users who just `pip install optastra`.
 all = [
-    "optastra[data,dev,notebook]",
+    "optastra[data,dev,notebook,docs]",
 ]
 
 [project.urls]

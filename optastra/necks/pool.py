@@ -2,7 +2,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .base import Neck
-from ._registry import register_neck
 from ..nn.features import FeatureMaps, FeatureSpec
 from ..nn.blocks.readout.pooling import (
     GlobalAvgPool2d,
@@ -133,25 +132,25 @@ pool_configs = {
 }
 
 
-@register_neck(config=pool_configs["global_avg_pool"])
+@Neck.register(config=pool_configs["global_avg_pool"])
 def global_avg_pool(in_spec: FeatureSpec, cfg: GlobalPoolConfig) -> GlobalPool:
     """Factory function to create a Global Average Pooling neck."""
     return GlobalPool(in_spec, cfg)
 
 
-@register_neck(config=pool_configs["global_max_pool"])
+@Neck.register(config=pool_configs["global_max_pool"])
 def global_max_pool(in_spec: FeatureSpec, cfg: GlobalPoolConfig) -> GlobalPool:
     """Factory function to create a Global Max Pooling neck."""
     return GlobalPool(in_spec, cfg)
 
 
-@register_neck(config=pool_configs["gem_pool"])
+@Neck.register(config=pool_configs["gem_pool"])
 def gem_pool(in_spec: FeatureSpec, cfg: GeMConfig) -> GeM:
     """Factory function to create a Generalized Mean Pooling neck."""
     return GeM(in_spec, cfg)
 
 
-@register_neck(config=pool_configs["token_pool"])
+@Neck.register(config=pool_configs["token_pool"])
 def token_pool(in_spec: FeatureSpec, cfg: TokenPoolConfig) -> TokenPool:
     """Factory function to create a Token Pooling neck."""
     return TokenPool(in_spec, cfg)

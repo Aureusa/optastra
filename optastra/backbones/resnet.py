@@ -13,7 +13,6 @@ from ..nn.blocks.convolution.residual import ResidualBlock, BottleneckResidualBl
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 from ..nn.features import FeatureSpec, FeatureMaps
 
-from ._registry import register_backbone
 
 
 __all__ = ["ResNet"]
@@ -142,22 +141,22 @@ resnet_configs = {
 }
 
 
-@register_backbone(config=resnet_configs["resnet18"])
+@Backbone.register(config=resnet_configs["resnet18"])
 def resnet18(cfg: ResNetConfig) -> ResNet:
     return ResNet(cfg)
 
-@register_backbone(config=resnet_configs["resnet34"])
+@Backbone.register(config=resnet_configs["resnet34"])
 def resnet34(cfg: ResNetConfig) -> ResNet:
     return ResNet(cfg)
 
-@register_backbone(config=resnet_configs["resnet50"])
+@Backbone.register(config=resnet_configs["resnet50"])
 def resnet50(cfg: ResNetConfig) -> ResNet:
     return ResNet(cfg)
 
-@register_backbone(config=resnet_configs["resnet101"])
+@Backbone.register(config=resnet_configs["resnet101"])
 def resnet101(cfg: ResNetConfig) -> ResNet:
     return ResNet(cfg)
 
-@register_backbone(config=resnet_configs["resnet152"])
+@Backbone.register(config=resnet_configs["resnet152"])
 def resnet152(cfg: ResNetConfig) -> ResNet:
     return ResNet(cfg)

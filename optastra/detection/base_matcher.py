@@ -2,13 +2,13 @@ from __future__ import annotations
 import torch
 
 from ..core.factory import Factory
-from ._registry import matcher_registry
+from ..core.registry import FamilyRegistry
 
 
 class Matcher(Factory["Matcher"]):
     """Match proposals/anchors to GT using IoU thresholds."""
 
-    _registry = matcher_registry
+    _registry = FamilyRegistry("matcher")
 
     def match(
         self,

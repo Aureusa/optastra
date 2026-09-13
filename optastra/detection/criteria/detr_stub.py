@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .._registry import register_criterion
 from ..base_criterion import DetectionCriterion
 from ...nn.features import HeadOutput
 
@@ -35,6 +34,6 @@ criterion_configs = {
 }
 
 
-@register_criterion(config=criterion_configs["detr_criterion_stub"])
+@DetectionCriterion.register(config=criterion_configs["detr_criterion_stub"])
 def detr_criterion_stub(cfg: DETRCriterionStubConfig) -> DETRCriterionStub:
     return DETRCriterionStub()

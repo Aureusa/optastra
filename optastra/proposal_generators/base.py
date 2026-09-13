@@ -3,9 +3,9 @@ from __future__ import annotations
 from abc import ABC
 import torch.nn as nn
 
-from ._registry import _registry
 from ..nn.features import FeatureMaps, FeatureSpec
 from ..core.factory import SpecFactory
+from ..core.registry import FamilyRegistry
 
 
 __all__ = ["ProposalGenerator"]
@@ -13,7 +13,7 @@ __all__ = ["ProposalGenerator"]
 
 class ProposalGenerator(nn.Module, SpecFactory["ProposalGenerator"], ABC):
     out_spec: FeatureSpec
-    _registry = _registry
+    _registry = FamilyRegistry("proposal_generator")
 
     @classmethod
     def _post_create(cls, module: "ProposalGenerator") -> "ProposalGenerator":

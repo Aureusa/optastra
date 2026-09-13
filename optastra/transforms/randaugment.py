@@ -19,7 +19,6 @@ import torch
 import torchvision.transforms.functional as F
 
 from .base import Transform
-from ._registry import register_transform
 from .functional import (
     safe_posterize,
     safe_autocontrast,
@@ -190,11 +189,11 @@ class RandAugment(Transform):
         return sample
 
 
-@register_transform(config=RandAugmentConfig())
+@Transform.register(config=RandAugmentConfig())
 def rand_augment(cfg):
     return RandAugment(cfg)
 
-@register_transform(config=RandAugmentConfig())
+@Transform.register(config=RandAugmentConfig())
 def rand_augment_all_ops(cfg):
     cfg.ops = list(_OPS.keys())
     return RandAugment(cfg)

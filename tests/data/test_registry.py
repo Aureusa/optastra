@@ -1,10 +1,10 @@
 import pytest
 
-from optastra.data.collate import CollateFn, register_collate
+from optastra.data.collate import CollateFn
 
 
 def test_collate_registry_registers_and_retrieves_entrypoint():
-    @register_collate
+    @CollateFn.register
     def UnitTestCollateRegistryFn(batch):
         return batch
 
@@ -18,14 +18,14 @@ def test_collate_registry_registers_and_retrieves_entrypoint():
 def test_collate_registry_stores_default_config_and_detects_duplicates():
     cfg = {"some": "value"}
 
-    @register_collate(config=cfg)
+    @CollateFn.register(config=cfg)
     def UnitTestCollateWithConfig(batch):
         return batch
 
     assert CollateFn._registry.get_default_config("UnitTestCollateWithConfig") == cfg
 
     with pytest.raises(ValueError, match="collate UnitTestCollateWithConfig already registered"):
-        @register_collate(config=cfg)
+        @CollateFn.register(config=cfg)
         def UnitTestCollateWithConfig(batch):
             return batch
 

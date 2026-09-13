@@ -1,7 +1,6 @@
 import torch, torch.nn.functional as F
 from dataclasses import dataclass
 from ..base import Algorithm
-from ...tasks._registry import register_task
 
 
 @dataclass
@@ -125,6 +124,6 @@ class BYOLTask(Algorithm):
         }
 
 
-@register_task(config=BYOLConfig())
+@Algorithm.register(config=BYOLConfig())
 def byol(cfg: BYOLConfig) -> BYOLTask:
     return BYOLTask(cfg)
