@@ -18,6 +18,7 @@ class TrainerState:
     current_batch: dict[str, Any] = field(default_factory=dict)
     hooks: list[Any] = field(default_factory=list)
     iter: int = 0
+    start_iter: int = 0     # first iter train() runs; advanced by ResumeHook via Checkpointer.load
     epoch: int = 0
     max_iter: int = 0
     eval_iter: int = 0
@@ -25,4 +26,3 @@ class TrainerState:
     last_output: TaskStepOutput | None = None
     last_data_time: float = 0.0
     should_stop: bool = False
-    

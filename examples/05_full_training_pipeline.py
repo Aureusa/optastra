@@ -25,6 +25,8 @@ from optastra import (
 )
 from optastra.transforms import Compose
 from optastra.training.hooks import (
+    BestCheckpointHook,
+    BestMetricTracker,
     default_hooks,
     EvalHook,
     SchedulerHook,
@@ -105,6 +107,9 @@ def main() -> None:
     scheduler = Scheduler.create("warmup_cosine", optimizer=optimizer, warmup_steps=5, total_steps=max_iter)
 
     # HOOKS -- behavior is added entirely through hooks, not by editing Trainer.
+    # One shared tracker: best-model checkpointing and early stopping agree on
+    # what "best" means, regardless of hook order.
+    best_loss = BestMetricTracker("val_total_loss", mode="min")
     hooks = default_hooks(
         log_every=LOG_EVERY,
         output_dir=output_dir,
@@ -112,7 +117,8 @@ def main() -> None:
     ) + [
         SchedulerHook(scheduler),
         EvalHook(eval_period, eval_fn=lambda: trainer.evaluate(val_loader)),
-        EarlyStoppingHook(metric="val_total_loss", patience=3),
+        BestCheckpointHook(output_dir, tracker=best_loss),
+        EarlyStoppingHook(tracker=best_loss, patience=3),
     ]
     trainer.register_hooks(hooks)
 

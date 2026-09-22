@@ -10,6 +10,12 @@ class Hook(ABC):
     directly, so new tasks or new TaskStepOutput fields never require hooks
     to change. Override only the lifecycle methods you need."""
 
+    # Lower runs first within every lifecycle event. Trainer sorts hooks
+    # stably by this, so equal-priority hooks keep registration order.
+    # 0 = must see state before anyone else (ResumeHook); 100 = must see
+    # everyone else's updates for this step (checkpointing).
+    priority: int = 50
+
     def before_train(self, state: TrainerState) -> None: ...
     def after_train(self, state: TrainerState) -> None: ...
     def before_epoch(self, state: TrainerState) -> None: ...

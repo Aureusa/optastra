@@ -1,10 +1,14 @@
 import json
 
+import pytest
 import torch
 import torch.nn as nn
 
-from optastra.training.hooks.checkpoint import CheckpointHook
+from optastra.training.checkpointer import Checkpointer
+from optastra.training.hooks.best_metric import BestMetricTracker
+from optastra.training.hooks.checkpoint import BestCheckpointHook, CheckpointHook
 from optastra.training.hooks.early_stopping import EarlyStoppingHook
+from optastra.training.hooks.resume import ResumeHook
 from optastra.training.hooks.ema import EMAHook
 from optastra.training.hooks.eval import EvalHook
 from optastra.training.hooks.writer import JSONWriterHook
@@ -29,21 +33,130 @@ def _build_state() -> TrainerState:
     )
 
 
+def _eval_at(state: TrainerState, it: int, **metrics: float) -> None:
+    """Simulates Trainer.evaluate() writing val metrics at training iter `it`."""
+    state.iter = state.storage.iter = it
+    state.storage.put_scalars(**metrics)
+
+
 def test_early_stopping_sets_should_stop_after_patience():
     state = _build_state()
     hook = EarlyStoppingHook(metric="loss", patience=2, mode="min")
 
-    state.storage.put_scalar("loss", 1.0)
+    _eval_at(state, 10, loss=1.0)
     hook.after_eval(state)
     assert state.should_stop is False
 
-    state.storage.put_scalar("loss", 1.1)
+    _eval_at(state, 20, loss=1.1)
     hook.after_eval(state)
     assert state.should_stop is False
 
-    state.storage.put_scalar("loss", 1.2)
+    _eval_at(state, 30, loss=1.2)
     hook.after_eval(state)
     assert state.should_stop is True
+
+
+def test_early_stopping_rejects_tracker_and_metric_together():
+    with pytest.raises(TypeError):
+        EarlyStoppingHook(metric="loss", tracker=BestMetricTracker("loss"))
+
+
+def test_tracker_verdict_is_cached_per_iter_so_sharing_is_order_independent():
+    state = _build_state()
+    tracker = BestMetricTracker("val_loss", "min")
+
+    _eval_at(state, 10, val_loss=1.0)
+    assert tracker.update(state) is True
+    assert tracker.update(state) is True  # second consumer, same eval
+    assert tracker.best == 1.0
+
+    _eval_at(state, 20, val_loss=2.0)
+    assert tracker.update(state) is False
+    assert tracker.update(state) is False
+
+
+def test_tracker_ignores_stale_metric():
+    state = _build_state()
+    tracker = BestMetricTracker("val_loss", "min")
+    _eval_at(state, 10, val_loss=1.0)
+    tracker.update(state)
+
+    state.iter = state.storage.iter = 20  # eval at 20 wrote nothing
+    assert tracker.update(state) is None
+
+
+def test_best_checkpoint_hook_saves_only_on_improvement(tmp_path):
+    state = _build_state()
+    tracker = BestMetricTracker("val_loss", "min")
+    best_hook = BestCheckpointHook(str(tmp_path), tracker=tracker)
+    stop_hook = EarlyStoppingHook(tracker=tracker, patience=5)
+    state.hooks = [stop_hook, best_hook]  # consumer order must not matter
+    best_path = tmp_path / "ckpt_best_val_loss.pt"
+
+    _eval_at(state, 10, val_loss=1.0)
+    for hook in state.hooks:
+        hook.after_eval(state)
+    assert best_path.exists()
+    assert torch.load(best_path)["iter"] == 10
+    assert stop_hook.bad_evals == 0
+
+    _eval_at(state, 20, val_loss=2.0)
+    for hook in state.hooks:
+        hook.after_eval(state)
+    assert torch.load(best_path)["iter"] == 10
+    assert stop_hook.bad_evals == 1
+
+    _eval_at(state, 30, val_loss=0.5)
+    for hook in state.hooks:
+        hook.after_eval(state)
+    ckpt = torch.load(best_path)
+    assert ckpt["iter"] == 30
+    assert ckpt["extra"] == {"metric": "val_loss", "value": 0.5}
+    assert stop_hook.bad_evals == 0
+
+
+def test_resume_picks_latest_periodic_checkpoint_and_ignores_best(tmp_path):
+    state = _build_state()
+    checkpointer = Checkpointer(str(tmp_path))
+    for it in (2, 10, 4):
+        state.iter = it
+        checkpointer.save(state, checkpointer.periodic_name(it))
+    state.iter = 12
+    checkpointer.save(state, checkpointer.best_name("val_loss"))
+
+    fresh = _build_state()
+    ResumeHook(checkpointer).before_train(fresh)
+    assert fresh.iter == 10
+
+
+def test_resume_without_checkpoints_or_dir_starts_from_scratch(tmp_path):
+    state = _build_state()
+    ResumeHook(str(tmp_path / "missing")).before_train(state)
+    assert state.iter == 0
+
+
+def test_resume_restores_same_class_hooks_in_order(tmp_path):
+    state = _build_state()
+    loss_hook = BestCheckpointHook(str(tmp_path), metric="val_loss", mode="min")
+    acc_hook = BestCheckpointHook(str(tmp_path), metric="val_acc", mode="max")
+    loss_hook.tracker.best, acc_hook.tracker.best = 0.3, 0.9
+    state.hooks = [loss_hook, acc_hook]
+    Checkpointer(str(tmp_path)).save(state, "ckpt_5.pt")
+
+    fresh = _build_state()
+    fresh_loss = BestCheckpointHook(str(tmp_path), metric="val_loss", mode="min")
+    fresh_acc = BestCheckpointHook(str(tmp_path), metric="val_acc", mode="max")
+    fresh.hooks = [ResumeHook(str(tmp_path)), fresh_loss, fresh_acc]
+    fresh.hooks[0].before_train(fresh)
+    assert fresh_loss.tracker.best == 0.3
+    assert fresh_acc.tracker.best == 0.9
+
+
+def test_early_stopping_loads_pre_tracker_checkpoint_state():
+    hook = EarlyStoppingHook(metric="loss")
+    hook.load_state_dict({"best": 0.7, "bad_evals": 3})
+    assert hook.tracker.best == 0.7
+    assert hook.bad_evals == 3
 
 
 def test_ema_hook_updates_teacher_parameters():
@@ -86,7 +199,7 @@ def test_checkpoint_hook_writes_expected_checkpoint_file(tmp_path):
     state = _build_state()
     state.iter = 4
 
-    hook = CheckpointHook(output_dir=str(tmp_path), save_every=2)
+    hook = CheckpointHook(str(tmp_path), save_every=2)
     hook.after_step(state)
 
     ckpt = tmp_path / "ckpt_4.pt"

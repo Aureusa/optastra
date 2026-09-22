@@ -31,6 +31,7 @@ class Trainer:
         model = model.to(resolved_device)
         self.storage = EventStorage()
         self.hooks: list[Hook] = list(hooks)
+        self._sort_hooks()
         self.state = TrainerState(model=model, task=task, optimizer=optimizer, storage=self.storage, device=resolved_device, hooks=self.hooks)
 
     @staticmethod
@@ -57,7 +58,12 @@ class Trainer:
 
     def register_hooks(self, hooks: Iterable[Hook]) -> None:
         self.hooks.extend(hooks)
+        self._sort_hooks()
         self.state.hooks = self.hooks  # update state with new hooks
+
+    def _sort_hooks(self) -> None:
+        # Stable, in place: equal-priority hooks keep registration order.
+        self.hooks.sort(key=lambda hook: getattr(hook, "priority", Hook.priority))
 
     def _run_hooks(self, method_name: str) -> None:
         for hook in self.state.hooks:
@@ -82,7 +88,8 @@ class Trainer:
         self._run_hooks("before_train")
 
         data_iter = iter(dataloader)
-        for it in range(max_iter):
+        # before_train hooks (ResumeHook) may have advanced start_iter.
+        for it in range(self.state.start_iter, max_iter):
             if self.state.should_stop:
                 break
             self.state.iter = self.storage.iter = it

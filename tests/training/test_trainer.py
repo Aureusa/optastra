@@ -3,6 +3,10 @@ import torch
 import torch.nn as nn
 
 from optastra.training.trainer import Trainer
+from optastra.training.hooks.base import Hook
+from optastra.training.hooks.checkpoint import CheckpointHook
+from optastra.training.hooks.resume import ResumeHook
+from optastra.training.hooks.scheduler import SchedulerHook
 from optastra.tasks.base import TaskStepOutput
 
 
@@ -100,3 +104,46 @@ def test_evaluate_runs_eval_lifecycle_hooks():
         ("after_eval_step", 0),
         ("after_eval", 0),
     ]
+
+
+class _StepRecorder(Hook):
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
+        self.iters = []
+        self.scheduler_steps = []
+
+    def after_step(self, state):
+        self.iters.append(state.iter)
+        self.scheduler_steps.append(self.scheduler.last_epoch)
+
+
+def _build_trainer(hooks_fn):
+    model = nn.Linear(4, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 1.0)
+    trainer = Trainer(model=model, task=_EvalOnlyTask(), optimizer=optimizer, device="cpu")
+    trainer.register_hooks(hooks_fn(scheduler))
+    return trainer
+
+
+def test_resume_continues_after_checkpointed_iter(tmp_path):
+    dataloader = [
+        {"inputs": torch.randn(2, 4), "targets": torch.randn(2, 1)} for _ in range(3)
+    ]
+
+    first = _build_trainer(lambda s: [CheckpointHook(str(tmp_path), save_every=2), SchedulerHook(s, log_lr=False)])
+    first.train(dataloader, max_iter=5)  # iters 0..4, checkpoints at 2 and 4
+
+    recorder = None
+
+    def resumed_hooks(scheduler):
+        nonlocal recorder
+        recorder = _StepRecorder(scheduler)
+        return [ResumeHook(str(tmp_path)), SchedulerHook(scheduler, log_lr=False), recorder]
+
+    second = _build_trainer(resumed_hooks)
+    second.train(dataloader, max_iter=8)
+
+    assert recorder.iters == [5, 6, 7]
+    assert recorder.scheduler_steps == [6, 7, 8]  # scheduler state restored in step with iter
+    assert second.state.epoch == first.state.epoch == 1  # restored, and 3 steps fit in one fresh pass
