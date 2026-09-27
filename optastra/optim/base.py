@@ -1,5 +1,4 @@
 from __future__ import annotations
-from dataclasses import replace
 import torch.nn as nn
 import torch.optim as optim
 
@@ -13,7 +12,12 @@ __all__ = ["Optimizer"]
 
 class Optimizer(Factory["Optimizer"]):
     """Factory only -- doesn't wrap or replace torch.optim.Optimizer at runtime,
-    it just constructs one correctly, including param groups."""
+    it just constructs one correctly, including param groups.
+
+    Registered optimizer configs are expected to have `lr` and
+    `weight_decay` fields: both are threaded into every param group
+    (`build_param_groups`), so per-group LR multipliers and the no-decay
+    bucket (norm/bias/pos_embed/...) are applied on top of them."""
 
     _registry = FamilyRegistry("optimizer")
 
@@ -29,9 +33,9 @@ class Optimizer(Factory["Optimizer"]):
         cls._check_registered(name)
 
         entrypoint = cls._registry.get_entrypoint(name)
-        default_cfg = cls._registry.get_default_config(name)
-        cfg = replace(default_cfg, **overrides)
+        cfg = cls._build_cfg(name, overrides)
 
-        groups = build_param_groups(model, param_groups, base_lr=cfg.lr)
+        groups = build_param_groups(
+            model, param_groups, base_lr=cfg.lr, base_weight_decay=getattr(cfg, "weight_decay", 0.0),
+        )
         return entrypoint(groups, cfg)
-    

@@ -46,3 +46,44 @@ def test_component_registry_filter_uses_regex_search():
     assert registry.list_component(filter="mask_rcnn") == ["mask_rcnn_1", "mask_rcnn_2"]
     assert registry.list_component(filter="rcnn") == ["faster_rcnn_r50", "mask_rcnn_1", "mask_rcnn_2"]
     assert registry.list_component(filter="mask_rcnn_[12]") == ["mask_rcnn_1", "mask_rcnn_2"]
+
+
+def test_component_registry_accepts_explicit_name_for_loop_registration():
+    registry = FamilyRegistry("component")
+
+    def build(cfg):
+        return cfg
+
+    for variant, cfg in {"small": {"width": 1}, "large": {"width": 2}}.items():
+        registry.register(build, default_config=cfg, name=variant)
+
+    assert registry.list_component() == ["large", "small"]
+    assert registry.get_entrypoint("small") is build
+    assert registry.get_default_config("large") == {"width": 2}
+
+    with pytest.raises(ValueError, match="component small already registered"):
+        registry.register(build, name="small")
+
+
+def test_component_registry_does_not_touch_module_all():
+    import sys
+
+    module = sys.modules[__name__]
+    had_all = hasattr(module, "__all__")
+    registry = FamilyRegistry("component")
+
+    @registry.register
+    def ComponentNotExported():
+        return "ok"
+
+    assert hasattr(module, "__all__") == had_all
+
+
+def test_component_registry_configless_entry_has_no_default_config():
+    registry = FamilyRegistry("component")
+
+    @registry.register
+    def Configless():
+        return "ok"
+
+    assert registry.get_default_config("Configless") is None

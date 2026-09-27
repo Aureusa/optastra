@@ -1,10 +1,15 @@
+import math
+
 from torch import nn
+
+from ..layers.layernorm2d import LayerNorm2d
 
 
 _NORMS = {
     "batchnorm": nn.BatchNorm2d,
     "batchnorm1d": nn.BatchNorm1d,
-    "layernorm": nn.LayerNorm,
+    "layernorm": nn.LayerNorm,      # normalizes the LAST dim -- for (B, C) / (B, N, C) inputs
+    "layernorm2d": LayerNorm2d,     # normalizes the channel dim of (B, C, H, W) inputs
     "groupnorm": nn.GroupNorm,
     None: None
 }
@@ -35,12 +40,13 @@ def list_dropouts():
     """List all available dropout types."""
     return list(_DROPS.keys())
 
-def get_norm(norm_name: str, num_features: int, num_groups: int = 32) -> nn.Module:
+def get_norm(norm_name: str, num_features: int, num_groups: int | None = None) -> nn.Module:
     """Get the normalization layer based on the provided name.
 
     :param norm_name: Name of the normalization type. Use list_norms() to see available options.
     :param num_features: Number of features (channels) for the normalization layer.
-    :param num_groups: Number of groups for group normalization. Default is 32.
+    :param num_groups: Number of groups for group normalization. Must divide num_features.
+    Default (None) picks gcd(32, num_features): 32 groups when possible, fewer for narrow layers.
     :return: An instance of the requested normalization layer.
     """
     if norm_name not in _NORMS:
@@ -49,8 +55,10 @@ def get_norm(norm_name: str, num_features: int, num_groups: int = 32) -> nn.Modu
     if norm_class is None:
         return nn.Identity()
     if norm_name == "groupnorm":
-        # For group normalization, we need to specify the number of groups.
-        # Here, we use 32 as a common choice, but this can be adjusted as needed.
+        if num_groups is None:
+            num_groups = math.gcd(32, num_features)
+        if num_features % num_groups != 0:
+            raise ValueError(f"num_groups ({num_groups}) must divide num_features ({num_features}) for groupnorm.")
         return norm_class(num_groups=num_groups, num_channels=num_features)
     return norm_class(num_features)
 

@@ -7,13 +7,16 @@ import torch
 from ..base_sampler import Sampler
 
 
+__all__ = ["BalancedSampler", "BalancedSamplerConfig"]
+
+
 @dataclass
 class BalancedSamplerConfig:
     batch_size: int = 512
     positive_fraction: float = 0.25
 
 
-class BalancedSampler:
+class BalancedSampler(Sampler):
     """Balanced positive/negative sampler used by RPN and RCNN heads."""
 
     def __init__(self, cfg: BalancedSamplerConfig):

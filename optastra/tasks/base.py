@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, replace, fields
-from typing import Any, Mapping, Literal
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Literal, Protocol
 import torch
 
 from ..nn.features import HeadOutput
@@ -8,7 +9,7 @@ from ..core.factory import Factory
 from ..core.registry import FamilyRegistry
 
 
-__all__ = ["Task", "TaskStepOutput", "Stage"]
+__all__ = ["Task", "TaskStepOutput", "Stage", "Evaluator", "MeanMetricEvaluator", "infer_batch_size"]
 
 
 Stage = Literal["train", "val", "test", "predict"]
@@ -24,30 +25,88 @@ class TaskStepOutput:
     targets: Any = None             # preprocessed targets, optional
 
 
+class Evaluator(Protocol):
+    """Accumulates per-batch TaskStepOutputs over a whole eval pass and
+    reduces them to dataset-level scalars. Built by `Task.build_evaluator()`
+    and driven by `Trainer.evaluate()`:
+
+        evaluator.reset()
+        for batch in loader:
+            evaluator.process(task.run_step(model, batch, "val"), batch)
+        results = evaluator.summarize()   # e.g. {"accuracy": 0.91, "total_loss": 0.32}
+
+    Keeping this separate from `compute_metrics` matters for any metric that
+    isn't a per-batch mean (accuracy over unequal batches, mAP, ...).
+    """
+
+    def reset(self) -> None: ...
+    def process(self, output: TaskStepOutput, batch: Mapping[str, Any]) -> None: ...
+    def summarize(self) -> dict[str, float]: ...
+
+
+def infer_batch_size(batch: Mapping[str, Any]) -> int:
+    """Number of samples in a collated batch: the leading dim of
+    `batch["inputs"]` (or its length if it is a list), or of the first view
+    for multi-view batches. Falls back to 1 (i.e. unweighted) if unknown."""
+    inputs = batch.get("inputs") if isinstance(batch, Mapping) else None
+    if inputs is None and isinstance(batch, Mapping) and batch.get("views"):
+        inputs = batch["views"][0]
+    if torch.is_tensor(inputs):
+        return int(inputs.shape[0])
+    if isinstance(inputs, (list, tuple)):
+        return len(inputs)
+    return 1
+
+
+class MeanMetricEvaluator:
+    """Default Evaluator: sample-weighted mean of `output.loss` (reported as
+    "total_loss") and every entry of `output.metrics`. Each batch is weighted
+    by its size, so the result equals the per-sample mean over the whole
+    dataset even when the last batch is smaller -- assuming each per-batch
+    value is itself a mean over that batch."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self._sums: dict[str, float] = defaultdict(float)
+        self._counts: dict[str, int] = defaultdict(int)
+
+    def process(self, output: TaskStepOutput, batch: Mapping[str, Any]) -> None:
+        n = infer_batch_size(batch)
+        values = dict(output.metrics)
+        if output.loss is not None:
+            values["total_loss"] = output.loss
+        for k, v in values.items():
+            self._sums[k] += float(v) * n
+            self._counts[k] += n
+
+    def summarize(self) -> dict[str, float]:
+        return {k: self._sums[k] / self._counts[k] for k in self._sums if self._counts[k] > 0}
+
+
 class Task(ABC, Factory["Task"]):
+    """Owns what is computed for a batch: splitting inputs/targets, the
+    forward pass, losses, metrics and decoding. It is deliberately free of
+    runtime policy -- mixed precision (autocast), gradient accumulation,
+    clipping and devices are the Trainer's job, so `run_step` behaves the
+    same on CPU, on GPU, and under any precision the Trainer wraps it in."""
+
     required_fields: tuple[str, ...] = ()
     collate: str = "default_collate"
     _registry = FamilyRegistry("task")
-    
+
     def run_step(self, model, batch: Mapping[str, Any], stage: Stage = "train") -> TaskStepOutput:
         self.validate_batch(batch, stage)
         inputs, raw_targets = self.split_inputs_targets(batch, stage)
         targets = self.preprocess_targets(raw_targets) if raw_targets is not None else None
 
-        with torch.autocast(
-            device_type="cuda",
-            dtype=torch.bfloat16,
-        ):
-            raw_preds = self.forward_model(model, inputs)
+        raw_preds = self.forward_model(model, inputs)
         self.validate_predictions(raw_preds)
 
         losses, total_loss = {}, None
         if stage in ("train", "val") and targets is not None:
-            with torch.autocast(
-                device_type="cuda",
-                dtype=torch.bfloat16,
-            ):
-                losses = self.compute_losses(raw_preds, targets)
+            losses = self.compute_losses(raw_preds, targets)
             total_loss = self.reduce_losses(losses)
 
         metrics = {}
@@ -60,6 +119,12 @@ class Task(ABC, Factory["Task"]):
 
         return TaskStepOutput(loss=total_loss, losses=losses, metrics=metrics,
                                predictions=decoded, raw_predictions=raw_preds, targets=targets)
+
+    def build_evaluator(self) -> Evaluator:
+        """Fresh Evaluator for one eval pass. The default averages loss and
+        `compute_metrics` output weighted by batch size; override for metrics
+        that need dataset-level accumulation (counts, mAP, ...)."""
+        return MeanMetricEvaluator()
 
     def validate_predictions(self, raw_preds: Any) -> None:
         if not isinstance(raw_preds, HeadOutput):

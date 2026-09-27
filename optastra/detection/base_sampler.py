@@ -6,6 +6,9 @@ from ..core.factory import Factory
 from ..core.registry import FamilyRegistry
 
 
+__all__ = ["Sampler"]
+
+
 class Sampler(Factory["Sampler"]):
     """Base class for balanced positive/negative samplers used by RPN and RCNN heads."""
     _registry = FamilyRegistry("sampler")

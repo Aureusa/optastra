@@ -49,19 +49,29 @@ Every component family is two things:
 There is no separate registry module to import -- `register` is a
 classmethod every `Factory`/`SpecFactory` subclass inherits, so a
 concrete component file only ever imports the base class it already
-subclasses (or, for shared registries like `Algorithm`/`Task`, imports
-whichever of the two is more convenient -- they resolve to the same
-registry).
+subclasses. `Algorithm` subclasses `Task` to reuse its step logic but has
+its own registry: SSL methods register with `@Algorithm.register`, tasks
+with `@Task.register`.
 
-The string passed to `@MyFamilyBase.register(...)`'s underlying function
-name (`foo` above) is the name users pass to `MyFamilyBase.create("foo")`
--- name it what a user would type, not what the class is called.
+The registry key is the decorated function's name (`foo` above) -- the
+name users pass to `MyFamilyBase.create("foo")` -- so name it what a user
+would type, not what the class is called. To register a table of variants
+in a loop, pass the key explicitly instead:
+
+```python
+for variant, cfg in foo_configs.items():
+    MyFamilyBase.register(foo, config=cfg, name=variant)
+```
+
+Registration never touches the module's namespace: every component module
+declares its own `__all__` (class, config, and factory function(s)), which
+is what the family's `from .my_file import *` re-exports.
 
 ## Where things go
 
 - New component -> its family's directory (`optastra/backbones/`,
-  `optastra/transforms/`, ...), re-exported via `from .my_file import *`
-  in that family's `__init__.py`.
+  `optastra/transforms/`, ...), with an explicit `__all__`, re-exported via
+  `from .my_file import *` in that family's `__init__.py`.
 - Tests -> `tests/<family>/test_<component>.py`, mirroring the existing
   layout (see `tests/backbones/test_resnet.py`).
 - Runnable, standalone usage demonstrations -> `examples/`, not `tests/`.
@@ -72,9 +82,14 @@ name (`foo` above) is the name users pass to `MyFamilyBase.create("foo")`
 
 Every registered component's tunable parameters live in a `@dataclass`,
 never a bare `dict`. This is what lets `Factory.create()` merge
-`**overrides` via `dataclasses.replace(default_cfg, **overrides)` and
-what lets `ExperimentConfig` serialize an entire experiment to YAML and
-back losslessly.
+`**overrides` into a deep copy of the default via `dataclasses.replace`,
+and what lets configs be dumped to YAML and loaded back.
+
+Config values must be plain data -- strings, numbers, bools, lists, tuples,
+dicts, nested dataclasses or `ComponentRef`s. Never store a class or a
+callable in a config (select it by name instead, e.g.
+`ResNetConfig.block = "bottleneck"`); `tests/core/test_config_yaml.py`
+checks every registered default config for this automatically.
 
 ## FeatureSpec discipline
 
@@ -95,6 +110,18 @@ pytest
 New components should have at least: a registration test (it appears in
 `list_all()`), a construction test (it builds without error, `out_spec`
 is set if applicable), and a forward-pass shape test.
+
+Shape tests are not enough on their own: anything that computes a number
+(a loss, a box, a learning rate, an EMA update, a transformed coordinate)
+also needs a test that checks the *value* against a hand-computed or
+reference result. Several past bugs -- misaligned RPN anchors, weight decay
+silently set to 0, a BYOL target that never moved -- passed every
+shape/key test.
+
+Some checks run automatically for everything registered:
+`tests/core/test_config_yaml.py` (every default config is YAML-safe) and
+`tests/backbones/test_out_spec_contract.py` (every backbone's measured
+feature channels/strides match its `out_spec`, alone and under FPN).
 
 ## Docs
 

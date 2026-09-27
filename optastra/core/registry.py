@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 import re
-import sys
-from collections import defaultdict
-from typing import Any, Callable, DefaultDict, Dict, List, Optional, Set, TypeVar
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 
 T = TypeVar("T", bound=Callable[..., Any])
@@ -17,6 +15,12 @@ class RegistryEntry:
 
 
 class FamilyRegistry:
+    """
+    Name -> (entrypoint, default config) table for one component family.
+
+    Registration never touches the defining module's namespace (in particular
+    its `__all__`): what a module exports is decided by the module itself.
+    """
 
     def __init__(
         self,
@@ -25,16 +29,13 @@ class FamilyRegistry:
         self.family = family
         self._components: Dict[str, RegistryEntry] = {}
 
-    def register(self, fn: T, *, default_config: Optional[Any] = None) -> T:
-        mod = sys.modules[fn.__module__]
-        module_name = fn.__module__.split('.')[-1]
-        component_name = fn.__name__
-
-        if hasattr(mod, '__all__'):
-            mod.__all__.append(component_name)  # type: ignore
-        else:
-            mod.__all__ = [component_name]  # type: ignore
-
+    def register(self, fn: T, *, default_config: Optional[Any] = None, name: Optional[str] = None) -> T:
+        """
+        Register `fn` under `name` (default: `fn.__name__`). Registering the same
+        callable under several names is fine -- that is how variant tables are
+        registered in a loop. Returns `fn` unchanged so this works as a decorator.
+        """
+        component_name = name or fn.__name__
         if component_name in self._components:
             raise ValueError(
                 f'{self.family} {component_name} already registered by {self._components[component_name].module}'
@@ -44,20 +45,9 @@ class FamilyRegistry:
             name=component_name,
             entrypoint=fn,
             default_config=default_config,
-            module=module_name,
+            module=fn.__module__.split('.')[-1],
         )
         return fn
-
-    def make_decorator(self):
-        """
-        Returns a register-style decorator bound to this registry,
-        supporting both @register_x and @register_x(config=...).
-        """
-        def register(fn=None, *, config=None):
-            def decorator(inner_fn):
-                return self.register(inner_fn, default_config=config)
-            return decorator(fn) if fn is not None else decorator
-        return register
 
     def list_component(self, module: Optional[str] = None, filter: Optional[str] = None) -> List[str]:
         if module is not None:
@@ -77,19 +67,18 @@ class FamilyRegistry:
     def is_registered(self, name: str) -> bool:
         return name in self._components
 
-    def get_entrypoint(self, name: str) -> Callable[..., Any]:
+    def _entry(self, name: str) -> RegistryEntry:
         if name not in self._components:
             raise ValueError(f'{self.family} {name} is not registered')
-        return self._components[name].entrypoint
+        return self._components[name]
+
+    def get_entrypoint(self, name: str) -> Callable[..., Any]:
+        return self._entry(name).entrypoint
 
     def get_module(self, name: str) -> str:
-        if name not in self._components:
-            raise ValueError(f'{self.family} {name} is not registered')
-        return self._components[name].module
+        return self._entry(name).module
 
     def get_default_config(self, name: str) -> Any:
-        if name not in self._components:
-            raise ValueError(f'{self.family} {name} is not registered')
-        if self._components[name].default_config is None:
-            raise ValueError(f'{self.family} {name} does not have a default config')
-        return self._components[name].default_config
+        """The registered default config object, or None for a configless component.
+        This is the shared original -- Factory hands out copies."""
+        return self._entry(name).default_config

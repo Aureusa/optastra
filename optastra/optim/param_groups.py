@@ -2,12 +2,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import torch.nn as nn
 
+
+__all__ = ["ParamGroupConfig", "build_param_groups", "DEFAULT_NO_DECAY_NAMES"]
+
 NORM_MODULES = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm, nn.GroupNorm)
+
+# Parameters that are conventionally never weight-decayed, matched against
+# any dotted component of the parameter name (so both `cls_token` and
+# `backbone.pos_embed.pos_embed` match). Decaying a positional embedding or
+# a class token pulls it towards zero, which only hurts.
+DEFAULT_NO_DECAY_NAMES = ("pos_embed", "cls_token", "dist_token", "mask_token", "relative_position_bias_table")
 
 
 @dataclass
 class ParamGroupConfig:
     no_decay_norm_and_bias: bool = True
+    # Parameter names (dotted components) excluded from weight decay,
+    # independently of `no_decay_norm_and_bias`. Pass () to disable.
+    no_decay_names: tuple[str, ...] = DEFAULT_NO_DECAY_NAMES
     # module-path prefix -> LR multiplier, e.g. {"backbone": 0.1}. Longest
     # matching prefix wins, so {"backbone": 0.1, "backbone.stem": 0.01} is
     # unambiguous rather than depending on dict iteration order.
@@ -20,6 +32,14 @@ def _multiplier_for(name: str, lr_multipliers: dict[str, float]) -> float:
         return 1.0
     longest = max(matches, key=len)
     return lr_multipliers[longest]
+
+
+def _is_no_decay(name: str, param: nn.Parameter, cfg: ParamGroupConfig, norm_param_ids: set[int]) -> bool:
+    if set(name.split(".")) & set(cfg.no_decay_names):
+        return True
+    if cfg.no_decay_norm_and_bias:
+        return name.endswith(".bias") or name == "bias" or id(param) in norm_param_ids
+    return False
 
 
 def build_param_groups(
@@ -46,8 +66,7 @@ def build_param_groups(
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        is_bias = name.endswith(".bias")
-        no_decay = cfg.no_decay_norm_and_bias and (is_bias or id(param) in norm_param_ids)
+        no_decay = _is_no_decay(name, param, cfg, norm_param_ids)
         mult = _multiplier_for(name, cfg.lr_multipliers)
         buckets.setdefault((mult, no_decay), []).append(param)
 

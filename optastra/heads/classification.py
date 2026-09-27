@@ -7,7 +7,7 @@ from ..nn.blocks.readout.mlp import MLP
 from ..nn.features import FeatureSpec, HeadOutput, FeatureMaps
 
 
-__all__ = ["ClassificationHead"]
+__all__ = ["ClassificationHead", "ClassificationHeadConfig"]
 
 
 @dataclass
@@ -22,7 +22,7 @@ class ClassificationHeadConfig:
 
 
 class ClassificationHead(Head):
-    """A simple classification head that produces logits and predictions."""
+    """MLP classification head: pooled (B, embed_dim) features -> (B, num_classes) logits."""
 
     def __init__(
             self,
@@ -50,10 +50,9 @@ class ClassificationHead(Head):
         """Forward pass through the classification head.
 
         :param x: Input features from the backbone or neck.
-        :return: HeadOutput containing logits and predictions.
+        :return: HeadOutput containing the logits.
         """
-        features = x.pooled
-        logits = self.mlp(features)
+        logits = self.mlp(self._pooled(x))
         return HeadOutput(logits=logits)
 
 

@@ -3,7 +3,6 @@ This module implements a convolutional layer followed by an optional normalizati
 The sequence of operations is Conv -> Norm -> Act, which is a common pattern in many CNN
 architectures.
 """
-from dataclasses import dataclass
 import torch.nn as nn
 
 from .._pytorch_primitives import get_norm, get_activation
@@ -22,7 +21,8 @@ class ConvNormAct(nn.Module):
         norm: str | None = "batchnorm",
         activation: str | None = "relu",
         bias: bool | None = None,
-        preact: bool = False
+        preact: bool = False,
+        num_groups: int | None = None,
     ):
         """
         Implements a convolutional layer followed by an optional
@@ -41,10 +41,13 @@ class ConvNormAct(nn.Module):
         If None, it defaults to kernel_size // 2 (same padding). Default is None.
         :param norm: Type of normalization to apply.
         Options are "batchnorm", "layernorm", "groupnorm", or None. Default is "batchnorm".
+        "layernorm" normalizes over the channel dim of the (B, C, H, W) conv output (LayerNorm2d).
         :param activation: Type of activation function to apply.
         Options are "relu", "gelu", or None. Default is "relu".
         :param bias: If True, adds a learnable bias to the output.
         If None, it defaults to True if norm is None, otherwise False. Default is None.
+        :param preact: If True, apply Norm -> Act before the conv (pre-activation). Default is False.
+        :param num_groups: Number of groups for "groupnorm". Default None = gcd(32, channels).
         """
         super(ConvNormAct, self).__init__()
         if bias is None:
@@ -61,7 +64,9 @@ class ConvNormAct(nn.Module):
         # In pre-activation mode normalization is applied before convolution,
         # so the normalization channel count must match the input tensor.
         norm_channels = in_channels if preact else out_channels
-        self.norm = get_norm(norm, norm_channels)
+        if norm == "layernorm":
+            norm = "layernorm2d"  # conv features are channels-first; plain nn.LayerNorm would normalize W
+        self.norm = get_norm(norm, norm_channels, num_groups=num_groups)
         self.act = get_activation(activation)
 
         self.preact = preact

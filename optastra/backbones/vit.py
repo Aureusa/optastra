@@ -11,17 +11,18 @@ import torch.nn as nn
 
 from .base import Backbone
 from ..nn.features import FeatureMaps, FeatureSpec
+from ..nn.layers import drop_path_rates
 from ..nn.blocks.transformer.patch_embed import PatchEmbedding
 from ..nn.blocks.transformer.transformer_block import TransformerBlock
-from ..nn.blocks.transformer.pos_embed import LearnedPosEmbed, SinusoidalPosEmbed, interpolate_pos_embed
+from ..nn.blocks.transformer.pos_embed import LearnedPosEmbed, SinusoidalPosEmbed
 
 
-__all__ = ["ViT"]
+__all__ = ["ViT", "ViTConfig"]
 
 
 @dataclass
 class ViTConfig:
-    img_size: int = 224
+    img_size: int = 224           # reference size: sizes the learned pos-embed; other sizes are interpolated
     patch_size: int = 16
     in_channels: int = 3
     embed_dim: int = 768
@@ -39,11 +40,19 @@ class ViTConfig:
 
 class ViT(Backbone):
     """
-    Vision Transformer. Populates embed_dim/patch_tokens/cls_token on
-    FeatureSpec/FeatureMaps -- never channels/strides, since there's
-    no multi-scale spatial pyramid here. Necks/heads that need channels/strides
-    (e.g. FPN) structurally cannot consume this backbone's output -- that's
-    intentional, per FeatureSpec.require().
+    Vision Transformer. The forward pass returns a FeatureMaps with:
+
+    - ``patch_tokens``: (B, N, D) final-normed patch tokens,
+    - ``cls_token``: (B, D) final-normed cls token (None if ``cfg.cls_token=False``),
+    - ``pooled``: the cls token, or the mean patch token when there is no cls token,
+    - ``feature_maps[level]``: the patch tokens reshaped to a (B, D, H/P, W/P)
+      spatial map -- a single-scale dense feature at stride P (``"C4"`` for P=16),
+      so pooling necks and FPN can consume a ViT like a one-stage CNN.
+
+    ``out_spec`` therefore carries embed_dim/num_tokens (token view) *and*
+    channels/strides for that one level (spatial view). ``num_tokens`` is the
+    patch count at the reference ``img_size``; forward() accepts any input size
+    (learned positions are interpolated, sin-cos positions are recomputed).
     """
     def __init__(self, cfg: ViTConfig):
         super().__init__()
@@ -54,12 +63,12 @@ class ViT(Backbone):
         self.patch_embed = PatchEmbedding(cfg.img_size, cfg.patch_size, cfg.in_channels, cfg.embed_dim)
         num_patches = self.patch_embed.num_patches
 
-        if cfg.cls_token:
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.embed_dim))
+        self.num_prefix_tokens = 1 if cfg.cls_token else 0
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, cfg.embed_dim)) if cfg.cls_token else None
         self.pos_embed = pos_embed_cls(cfg.embed_dim, self.patch_embed.grid_size, cls_token=cfg.cls_token)
         self.pos_dropout = nn.Dropout(cfg.pos_embed_dropout)
 
-        dpr = [x.item() for x in torch.linspace(0, cfg.drop_path_rate, cfg.depth)]
+        dpr = drop_path_rates(cfg.drop_path_rate, cfg.depth)
         self.blocks = nn.ModuleList([
             TransformerBlock(
                 dim=cfg.embed_dim, num_heads=cfg.num_heads, mlp_ratio=cfg.mlp_ratio,
@@ -70,27 +79,20 @@ class ViT(Backbone):
         ])
         self.norm = nn.LayerNorm(cfg.embed_dim)
 
-        self.out_spec = FeatureSpec(embed_dim=cfg.embed_dim, num_tokens=num_patches)
+        # Name the dense map after the pyramid level closest to its stride (P=16 -> "C4", P=8 -> "C3").
+        self.feature_level = f"C{round(math.log2(cfg.patch_size))}"
+        self.out_spec = FeatureSpec(
+            channels={self.feature_level: cfg.embed_dim},
+            strides={self.feature_level: cfg.patch_size},
+            embed_dim=cfg.embed_dim,
+            num_tokens=num_patches,
+        )
 
         self._init_weights()
 
-    def load_state_dict(self, state_dict: dict, strict: bool = True):
-        super().load_state_dict(state_dict, strict=strict)
-
-        # If loading pretrained weights, call `interpolate_pos_embed` to resize
-        # the positional embedding to match the current grid size (num_patches).
-        if self.cfg.pos_embed_type == "learned" and "pos_embed" in state_dict:
-            old_pos_embed = state_dict["pos_embed"]
-            new_pos_embed = interpolate_pos_embed(
-                old_pos_embed,
-                old_grid_size=int(math.sqrt(old_pos_embed.shape[1] - 1)),
-                new_grid_size=int(math.sqrt(self.patch_embed.num_patches))
-            )
-            self.pos_embed.pos_embed.data.copy_(new_pos_embed)
-
     def _init_weights(self):
-        nn.init.trunc_normal_(self.pos_embed.pos_embed, std=0.02)
-        if hasattr(self, "cls_token"):
+        # The positional embedding initializes itself (trunc-normal if learned, sin-cos if fixed).
+        if self.cls_token is not None:
             nn.init.trunc_normal_(self.cls_token, std=0.02)
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -102,23 +104,33 @@ class ViT(Backbone):
                 nn.init.zeros_(m.bias)
 
     def forward(self, images: torch.Tensor) -> FeatureMaps:
-        B = images.shape[0]
+        B, _, H, W = images.shape
+        grid_size = (H // self.cfg.patch_size, W // self.cfg.patch_size)
 
-        # Create patch embeddings and add positional embeddings
-        x = self.patch_embed(images)                          # (B, num_patches, embed_dim)
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat([cls_tokens, x], dim=1)                  # (B, num_patches+1, embed_dim)
-        x = self.pos_dropout(self.pos_embed(x))                                 # (B, num_patches+1, embed_dim)
+        # Create patch embeddings, prepend the cls token and add positional embeddings
+        x = self.patch_embed(images)                           # (B, num_patches, embed_dim)
+        if self.cls_token is not None:
+            x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)   # (B, 1 + num_patches, embed_dim)
+        x = self.pos_dropout(self.pos_embed(x, grid_size))
 
         # Run it through the transformer blocks and layer norm
         for block in self.blocks:
             x = block(x)
         x = self.norm(x)
 
-        # Split the output into cls_token and patch_tokens, and return as FeatureMaps
-        cls_out = x[:, 0]
-        patch_out = x[:, 1:]
-        return FeatureMaps(cls_token=cls_out, patch_tokens=patch_out, pooled=cls_out)
+        # Split the output into cls_token and patch_tokens
+        patch_out = x[:, self.num_prefix_tokens:]              # (B, num_patches, embed_dim)
+        cls_out = x[:, 0] if self.cls_token is not None else None
+        pooled = cls_out if cls_out is not None else patch_out.mean(dim=1)
+
+        # Tokens are row-major over the patch grid -> reshape back to a (B, D, H/P, W/P) map
+        spatial = patch_out.transpose(1, 2).reshape(B, -1, *grid_size)
+        return FeatureMaps(
+            feature_maps={self.feature_level: spatial},
+            cls_token=cls_out,
+            patch_tokens=patch_out,
+            pooled=pooled,
+        )
 
 
 vit_configs = {

@@ -10,12 +10,42 @@ python examples/01_quickstart_classification.py
 ```
 
 - **[Getting Started](docs/getting-started.md)** -- install, first `Backbone.create(...)`, first training step.
+- **[Tutorials](docs/tutorials.md)** -- scenario walkthroughs: classification, multi-band astronomy data, self-supervised pretraining, detection, backbone comparisons, and extending the framework.
 - **[Concepts](docs/concepts.md)** -- the core abstractions and how Registry -> Factory -> ComponentRef fit together.
 - **[Extending](docs/extending.md)** -- copy-pasteable recipes for adding a new backbone, transform, task, or hook.
 - **[API Reference](docs/api.md)** -- generated from docstrings (`pip install -e ".[docs]" && mkdocs serve`).
 - **[examples/](examples/)** -- runnable, CPU-only usage scripts.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** -- the registration convention every family follows.
-- **[ROADMAP.md](ROADMAP.md)** -- usability/extensibility roadmap and known gaps.
+
+### Status
+
+Most of this README describes the design and its goals. Implemented today:
+
+- **Backbones:** ResNet, VGG, AlexNet, ConvNeXt, EfficientNet, ViT (any input
+  size; also exposes a stride-16 feature map, so it works with FPN and
+  pooling necks). Pretrained weights load with
+  `Backbone.create(name, weights=path)` from a plain state_dict or any
+  optastra checkpoint.
+- **Necks / heads:** FPN, global / GeM / token pooling; classification,
+  regression (continuous values), and R-CNN box and mask heads.
+- **Tasks:** classification, regression (MAE / RMSE / R² evaluation), and detection.
+- **Architectures:** Fast / Faster / Mask R-CNN.
+- **Self-supervised pretraining:** SimCLR and BYOL (EMA teacher with a
+  cosine momentum schedule), built from config with any registered
+  backbone; `export_backbone` hands the pretrained weights to a
+  downstream task (see `examples/06_ssl_pretrain_then_finetune.py`).
+- **Transforms:** geometric ops move boxes and masks with the image;
+  photometric ops handle any channel count and float / high-dynamic-range
+  data (e.g. multi-band survey images); randomness is seedable.
+- **Training:** a hook-driven `Trainer` with fp32 / bf16 / fp16 precision,
+  gradient accumulation and clipping, sample-weighted evaluation, and
+  resumable checkpoints.
+
+Items marked *(planned)* below are not implemented yet -- e.g. Swin,
+segmentation tasks, MAE / DINOv2 / CLIP, and a standalone
+Loss family (`optastra/losses/` is an empty placeholder). Also not
+implemented yet: data / trainer / hook settings in `ExperimentConfig`, and
+multi-GPU (DDP) training.
 
 ## Motivation
 
@@ -121,7 +151,7 @@ Examples:
 * ResNet
 * ConvNeXt
 * ViT
-* Swin
+* Swin *(planned)*
 
 **Algorithms**
 
@@ -236,7 +266,8 @@ optastra/
     core/                   registry, factory, ComponentRef, ExperimentConfig
     nn/
         features.py         FeatureSpec / FeatureMaps / HeadOutput
-        blocks/             reusable layers (residual, attention, pooling, ...)
+        layers/             shared primitives (LayerNorm2d, StochasticDepth)
+        blocks/             reusable blocks (residual, attention, pooling, ...)
 
     backbones/              resnet.py, vit.py, convnext.py, efficientnet.py, ...
     necks/                  fpn.py, pool.py
@@ -279,14 +310,14 @@ Responsible only for producing feature representations.
 Backbone
     images
         ↓
-BackboneFeatures
+FeatureMaps
 ```
 
 Backbones should not know anything about downstream tasks.
 
 ---
 
-## BackboneFeatures
+## FeatureMaps (backbone output)
 
 Backbones should not return raw tensors.
 
@@ -311,10 +342,10 @@ Converts features into task-specific outputs.
 Examples:
 
 * ClassificationHead
-* RegressionHead
-* DetectionHead
-* SegmentationHead
-* EmbeddingHead
+* RegressionHead (`RegressionHead`; box deltas: `BBoxRegressionHead`)
+* DetectionHead (R-CNN: `ROIBoxHead`, `MaskRCNNHead`)
+* SegmentationHead *(planned)*
+* EmbeddingHead *(planned)*
 
 ---
 
@@ -332,7 +363,7 @@ Examples:
 * Classification
 * Regression
 * Detection
-* Segmentation
+* Segmentation *(planned)*
 
 ---
 
@@ -365,7 +396,7 @@ Different backbones
 * ResNet
 * ConvNeXt
 * ViT
-* Swin
+* Swin *(planned)*
 
 Different pretraining
 
@@ -395,7 +426,7 @@ Essential
 * ResNet
 * ConvNeXt
 * Vision Transformer
-* Swin Transformer
+* Swin Transformer *(planned)*
 
 Later
 

@@ -10,9 +10,13 @@ from ...core.component_ref import ComponentRef
 from ...nn.blocks.geometry.boxes import encode_boxes
 from ...nn.features import FeatureMaps, HeadOutput
 
+from .. import keys
 from ..base_matcher import Matcher
 from ..base_sampler import Sampler
 from ..base_criterion import DetectionCriterion
+
+
+__all__ = ["RCNNCriterion", "RCNNCriterionConfig"]
 
 
 def _labels_to_binary(labels: torch.Tensor, *, num_classes: int) -> torch.Tensor:
@@ -27,6 +31,9 @@ class RCNNCriterionConfig:
     num_classes: int = 80
     bbox_reg_weights: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     box_loss_beta: float = 1.0
+    # The RPN box coder weights are read from the RPN output (so encoding always
+    # matches the RPN's decoding); only the loss shape is configured here.
+    rpn_box_loss_beta: float = 1.0 / 9.0
     mask_loss_weight: float = 1.0
     roi_matcher: ComponentRef = field(default_factory=lambda: ComponentRef("iou_matcher"))
     roi_sampler: ComponentRef = field(default_factory=lambda: ComponentRef("rcnn_balanced_sampler"))
@@ -35,6 +42,13 @@ class RCNNCriterionConfig:
 
 
 class RCNNCriterion(DetectionCriterion):
+    """Losses for Fast / Faster / Mask R-CNN.
+
+    Reads ``logits`` (R, C+1), ``values`` (R, 4) or (R, 4*C), optional ``masks``
+    (R, C or 1, M, M) and the ``extra`` keys documented in
+    :mod:`optastra.detection.keys` (``ROI_BOXES``, optional ``RPN``).
+    """
+
     required_fields = ("logits", "values")
 
     def __init__(self, cfg: RCNNCriterionConfig):
@@ -46,8 +60,43 @@ class RCNNCriterion(DetectionCriterion):
 
     def validate_predictions(self, raw_preds: HeadOutput) -> None:
         super().validate_predictions(raw_preds)
-        if "roi_boxes" not in raw_preds.extra:
-            raise ValueError("RCNNCriterion requires raw_preds.extra['roi_boxes'] from architecture forward().")
+        if keys.ROI_BOXES not in raw_preds.extra:
+            raise ValueError(
+                f"RCNNCriterion requires raw_preds.extra['{keys.ROI_BOXES}'] from architecture forward()."
+            )
+
+        # Guard against a model/task num_classes mismatch, which would otherwise
+        # train silently (e.g. a 91-class architecture with an 80-class task).
+        num_classes = self.cfg.num_classes
+        logits_classes = raw_preds.logits.shape[-1]
+        if logits_classes != num_classes + 1:
+            raise ValueError(
+                f"The model predicts {logits_classes} class logits but the criterion expects "
+                f"num_classes + 1 = {num_classes + 1} (foreground classes + background). "
+                "Set the same num_classes on the architecture and on the task."
+            )
+        box_dim = raw_preds.values.shape[-1]
+        if box_dim not in (4, 4 * num_classes):
+            raise ValueError(
+                f"Box deltas must have 4 (class-agnostic) or 4 * num_classes = {4 * num_classes} "
+                f"(class-specific) values per ROI, got {box_dim}."
+            )
+        if raw_preds.masks is not None and raw_preds.masks.shape[1] not in (1, num_classes):
+            raise ValueError(
+                f"Mask predictions must have 1 (class-agnostic) or num_classes = {num_classes} "
+                f"channels, got {raw_preds.masks.shape[1]}."
+            )
+
+    def _validate_labels(self, labels: torch.Tensor, image_index: int) -> None:
+        if labels.numel() == 0:
+            return
+        low, high = int(labels.min().item()), int(labels.max().item())
+        if low < 0 or high >= self.cfg.num_classes:
+            raise ValueError(
+                f"Target labels of image {image_index} must be in [0, {self.cfg.num_classes}), "
+                f"got values in [{low}, {high}]. Labels are contiguous foreground indices; "
+                "check that the dataset's category mapping and the task's num_classes agree."
+            )
 
     def _box_reg_loss(
         self,
@@ -70,56 +119,61 @@ class RCNNCriterion(DetectionCriterion):
             pred = fg_deltas.view(fg_deltas.shape[0], self.cfg.num_classes, 4)
             pred = pred[torch.arange(pred.shape[0], device=pred.device), fg_targets]
 
-        return F.smooth_l1_loss(pred, target_deltas, beta=self.cfg.box_loss_beta, reduction="sum") / max(int(fg.sum().item()), 1)
+        return F.smooth_l1_loss(pred.float(), target_deltas, beta=self.cfg.box_loss_beta, reduction="sum") / max(int(fg.sum().item()), 1)
 
     def _rpn_losses(self, rpn_output: FeatureMaps, targets: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
-        if not rpn_output.extra:
-            zero = torch.tensor(0.0)
+        """Objectness + box losses of the RPN.
+
+        Anchors of all FPN levels are matched and sampled together, per image:
+        one ``rpn_sampler.batch_size`` budget per image, and both losses are
+        normalised by the total number of sampled anchors in the batch.
+        """
+        objectness = rpn_output.extra[keys.OBJECTNESS_LOGITS]  # (N, A)
+        deltas = rpn_output.extra[keys.BBOX_DELTAS]            # (N, A, 4)
+        anchors = rpn_output.extra[keys.ANCHORS]               # (A, 4)
+        box_coder_weights = rpn_output.extra.get(keys.BOX_CODER_WEIGHTS, (1.0, 1.0, 1.0, 1.0))
+
+        sampled_logits: list[torch.Tensor] = []
+        sampled_labels: list[torch.Tensor] = []
+        pos_pred_deltas: list[torch.Tensor] = []
+        pos_target_deltas: list[torch.Tensor] = []
+
+        for image_index, target in enumerate(targets):
+            gt_boxes = target["boxes"].to(device=anchors.device, dtype=anchors.dtype)
+            gt_labels = torch.ones((gt_boxes.shape[0],), dtype=torch.long, device=anchors.device)
+            labels, matched_gt = self.rpn_matcher.match(anchors, gt_boxes, gt_labels, background_label=0)
+            sampled = self.rpn_sampler.sample(labels, positive_value=1, negative_value=0)
+
+            sampled_logits.append(objectness[image_index, sampled])
+            sampled_labels.append(labels[sampled].to(torch.float32))
+
+            pos = sampled[labels[sampled] == 1]
+            if pos.numel() > 0:
+                pos_pred_deltas.append(deltas[image_index, pos])
+                pos_target_deltas.append(
+                    encode_boxes(anchors[pos], gt_boxes[matched_gt[pos]], weights=box_coder_weights)
+                )
+
+        num_sampled = sum(int(t.numel()) for t in sampled_logits)
+        if num_sampled == 0:
+            zero = objectness.sum() * 0.0 + deltas.sum() * 0.0
             return {"rpn_objectness_loss": zero, "rpn_box_loss": zero}
 
-        objectness_by_level = rpn_output.extra["objectness_logits"]
-        deltas_by_level = rpn_output.extra["bbox_deltas"]
-        anchors_by_level = rpn_output.extra["anchors"]
+        objectness_loss = F.binary_cross_entropy_with_logits(
+            torch.cat(sampled_logits).float(), torch.cat(sampled_labels), reduction="sum"
+        ) / num_sampled
 
-        any_level = next(iter(objectness_by_level.values()))
-        device = any_level.device
-        total_obj = torch.tensor(0.0, device=device)
-        total_box = torch.tensor(0.0, device=device)
-        num_images = any_level.shape[0]
+        if pos_pred_deltas:
+            box_loss = F.smooth_l1_loss(
+                torch.cat(pos_pred_deltas).float(),
+                torch.cat(pos_target_deltas),
+                beta=self.cfg.rpn_box_loss_beta,
+                reduction="sum",
+            ) / num_sampled
+        else:
+            box_loss = deltas.sum() * 0.0
 
-        for image_index in range(num_images):
-            gt_boxes = targets[image_index]["boxes"]
-            gt_labels = torch.ones((gt_boxes.shape[0],), dtype=torch.long, device=device)
-            for level_name, obj_logits in objectness_by_level.items():
-                level_logits = obj_logits[image_index].reshape(-1)
-                _, anchors_per_loc, h, w = obj_logits.shape
-                level_deltas = deltas_by_level[level_name][image_index].view(anchors_per_loc, 4, h, w)
-                level_deltas = level_deltas.permute(2, 3, 0, 1).reshape(-1, 4)
-                anchors = anchors_by_level[level_name]
-
-                labels, matched_gt = self.rpn_matcher.match(
-                    anchors,
-                    gt_boxes,
-                    gt_labels,
-                    background_label=0,
-                )
-                sampled = self.rpn_sampler.sample(labels, positive_value=1, negative_value=0)
-                if sampled.numel() == 0:
-                    continue
-
-                sampled_labels = labels[sampled].float()
-                total_obj = total_obj + F.binary_cross_entropy_with_logits(level_logits[sampled], sampled_labels)
-
-                pos = sampled[labels[sampled] == 1]
-                if pos.numel() > 0 and gt_boxes.numel() > 0:
-                    pred_pos = level_deltas[pos]
-                    target_pos = encode_boxes(anchors[pos], gt_boxes[matched_gt[pos]], weights=self.cfg.bbox_reg_weights)
-                    total_box = total_box + F.smooth_l1_loss(pred_pos, target_pos, beta=self.cfg.box_loss_beta, reduction="sum") / max(int(pos.numel()), 1)
-
-        return {
-            "rpn_objectness_loss": total_obj / max(num_images, 1),
-            "rpn_box_loss": total_box / max(num_images, 1),
-        }
+        return {"rpn_objectness_loss": objectness_loss, "rpn_box_loss": box_loss}
 
     def _mask_loss(
         self,
@@ -164,10 +218,10 @@ class RCNNCriterion(DetectionCriterion):
 
         pred_tensor = torch.stack(pred_selected, dim=0)
         target_tensor = torch.stack(aligned_targets, dim=0)
-        return F.binary_cross_entropy_with_logits(pred_tensor, target_tensor)
+        return F.binary_cross_entropy_with_logits(pred_tensor.float(), target_tensor)
 
     def compute_losses(self, raw_preds: HeadOutput, targets: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
-        roi_boxes = raw_preds.extra["roi_boxes"]
+        roi_boxes = raw_preds.extra[keys.ROI_BOXES]
         logits = raw_preds.logits
         box_deltas = raw_preds.values
         if logits is None or box_deltas is None:
@@ -178,6 +232,7 @@ class RCNNCriterion(DetectionCriterion):
         matched_gt_global = torch.zeros((roi_boxes.shape[0],), dtype=torch.long, device=roi_boxes.device)
 
         for image_index, target in enumerate(targets):
+            self._validate_labels(target["labels"], image_index)
             image_idx = torch.where(roi_boxes[:, 0].long() == image_index)[0]
             if image_idx.numel() == 0:
                 continue
@@ -186,7 +241,7 @@ class RCNNCriterion(DetectionCriterion):
             labels, matched_gt = self.roi_matcher.match(
                 proposals,
                 target["boxes"],
-                target["labels"].clamp(min=0, max=self.cfg.num_classes - 1),
+                target["labels"],
                 background_label=self.cfg.num_classes,
             )
             sampled = self.roi_sampler.sample(
@@ -210,7 +265,7 @@ class RCNNCriterion(DetectionCriterion):
             roi_cls_loss = logits.sum() * 0.0
             roi_box_loss = box_deltas.sum() * 0.0
         else:
-            roi_cls_loss = F.cross_entropy(logits[sampled_global], cls_targets_all)
+            roi_cls_loss = F.cross_entropy(logits[sampled_global].float(), cls_targets_all)
 
             gt_boxes_for_samples = []
             for idx, global_idx in enumerate(sampled_global.tolist()):
@@ -233,7 +288,7 @@ class RCNNCriterion(DetectionCriterion):
             "roi_box_loss": roi_box_loss,
         }
 
-        rpn_output = raw_preds.extra.get("rpn")
+        rpn_output = raw_preds.extra.get(keys.RPN)
         if isinstance(rpn_output, FeatureMaps):
             losses.update(self._rpn_losses(rpn_output, targets))
 

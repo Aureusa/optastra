@@ -1,8 +1,14 @@
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import yaml
 
-from .component_ref import ComponentRef, component_field, ComponentRefConfigMixin
+from .component_ref import (
+    ComponentRef,
+    ComponentRefConfigMixin,
+    component_field,
+    config_from_plain,
+    config_to_plain,
+)
 from ..architectures.base import Architecture
 from ..tasks.base import Task
 from ..optim.base import Optimizer
@@ -21,16 +27,18 @@ class ExperimentConfig(ComponentRefConfigMixin):
     batch_size: int = 32
     output_dir: str = "runs/exp"
 
+    def to_dict(self) -> dict:
+        """Plain, YAML-safe dict. ComponentRefs (including ones nested inside
+        overrides) are written as {"name": ..., "overrides": {...}} so
+        from_dict() rebuilds exactly the same config."""
+        return config_to_plain(self)
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "ExperimentConfig":
+        return cls(**config_from_plain(raw))
+
     def to_yaml(self, path: str | None = None) -> str:
-        payload = {
-            "architecture": asdict(self.architecture),
-            "task": asdict(self.task),
-            "optimizer": asdict(self.optimizer),
-            "scheduler": asdict(self.scheduler) if self.scheduler else None,
-            "seed": self.seed, "max_iter": self.max_iter,
-            "batch_size": self.batch_size, "output_dir": self.output_dir,
-        }
-        text = yaml.safe_dump(payload, sort_keys=False)
+        text = yaml.safe_dump(self.to_dict(), sort_keys=False)
         if path:
             with open(path, "w") as f:
                 f.write(text)
@@ -40,11 +48,4 @@ class ExperimentConfig(ComponentRefConfigMixin):
     def from_yaml(cls, path: str) -> "ExperimentConfig":
         with open(path) as f:
             raw = yaml.safe_load(f)
-        mk = lambda d: ComponentRef(**d) if d else None
-        return cls(
-            architecture=mk(raw["architecture"]), task=mk(raw["task"]),
-            optimizer=mk(raw["optimizer"]), scheduler=mk(raw.get("scheduler")),
-            seed=raw["seed"], max_iter=raw["max_iter"],
-            batch_size=raw["batch_size"], output_dir=raw["output_dir"],
-        )
-    
+        return cls.from_dict(raw)

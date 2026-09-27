@@ -1,8 +1,7 @@
 """Advanced: wire together every training-time piece -- Backbone/Neck/Head,
 Task, Optimizer, Scheduler, DataLoader, Trainer, and hooks -- the same way
-a real training script does (see e.g. `rand_augment_all_ops.py` in a
-downstream project), just toy-sized so it runs on CPU in a few seconds
-with synthetic data instead of a real dataset.
+a real training script does, just toy-sized so it runs on CPU in a few
+seconds with synthetic data instead of a real dataset.
 
 Run with:
     python examples/05_full_training_pipeline.py
@@ -82,8 +81,18 @@ def main() -> None:
     # OPTIMIZER
     optimizer = Optimizer.create("adamw", model, lr=1e-3)
 
-    # TRAINER -- orchestrates model + task + optimizer + hooks.
-    trainer = Trainer(model=model, task=task, optimizer=optimizer, device="cpu")
+    # TRAINER -- orchestrates model + task + optimizer + hooks, and owns the
+    # runtime policy: precision ("fp32" | "bf16" | "fp16"), gradient
+    # accumulation and clipping. One iteration == one optimizer step.
+    trainer = Trainer(
+        model=model,
+        task=task,
+        optimizer=optimizer,
+        device="cpu",
+        precision="fp32",       # "bf16" autocasts on CPU too; "fp16" adds a GradScaler
+        grad_accum_steps=1,     # >1: each iteration consumes N batches (effective batch N x BATCH_SIZE)
+        clip_grad_norm=1.0,     # logged to storage as "grad_norm"
+    )
 
     # DATA -- augment at train time only, same to_float-first convention
     # every real pipeline follows.
@@ -104,6 +113,7 @@ def main() -> None:
     eval_period = max_iter // EPOCHS  # once per epoch
 
     # SCHEDULER -- stepped by a hook, Trainer/Task never know it exists.
+    # total_steps is required: the cosine must end where training ends.
     scheduler = Scheduler.create("warmup_cosine", optimizer=optimizer, warmup_steps=5, total_steps=max_iter)
 
     # HOOKS -- behavior is added entirely through hooks, not by editing Trainer.
@@ -116,6 +126,8 @@ def main() -> None:
         checkpoint_every=eval_period,
     ) + [
         SchedulerHook(scheduler),
+        # trainer.evaluate() writes val_accuracy / val_total_loss (sample-weighted,
+        # via the task's Evaluator) to storage and to logs/metrics.jsonl.
         EvalHook(eval_period, eval_fn=lambda: trainer.evaluate(val_loader)),
         BestCheckpointHook(output_dir, tracker=best_loss),
         EarlyStoppingHook(tracker=best_loss, patience=3),
@@ -124,7 +136,8 @@ def main() -> None:
 
     print(f"Training {type(model).__name__} for {max_iter} iterations ({EPOCHS} epochs)...")
     trainer.train(train_loader, max_iter=max_iter)
-    print(f"Done. Logs/checkpoints written to {output_dir}")
+    final = {k: round(v, 4) for k, v in trainer.state.eval_results.items()}
+    print(f"Done. Final eval: {final}. Logs/checkpoints written to {output_dir}")
 
     shutil.rmtree(output_dir, ignore_errors=True)
 

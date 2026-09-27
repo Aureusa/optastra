@@ -7,6 +7,9 @@ from ..nn.features import HeadOutput
 from ..core.registry import FamilyRegistry
 
 
+__all__ = ["Postprocessor"]
+
+
 class Postprocessor(Factory["Postprocessor"]):
     """Factory for postprocessors that convert raw model outputs into structured predictions."""
 

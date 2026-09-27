@@ -3,6 +3,7 @@ import torch
 from optastra.core.component_ref import ComponentRef
 from optastra.architectures import Architecture
 from optastra.architectures.faster_rcnn import FasterRCNN
+from optastra.detection import keys
 from optastra.nn.features import FeatureMaps
 
 
@@ -56,3 +57,43 @@ def test_registered_c5_variant_builds_without_fpn():
 
     assert isinstance(model, FasterRCNN)
     assert model.neck is None
+
+
+def _tiny_faster_rcnn():
+    torch.manual_seed(0)
+    return Architecture.create(
+        "faster_rcnn_r18_fpn",
+        num_classes=3,
+        roi_box_head=ComponentRef("roi_box_head", {"fc_hidden_features": 16}),
+    )
+
+
+def test_faster_rcnn_proposals_respect_each_images_unpadded_size():
+    model = _tiny_faster_rcnn()
+    out = model(torch.randn(2, 3, 64, 64), image_sizes=[(64, 64), (32, 48)])
+
+    proposals = out.extra[keys.ROI_BOXES]
+    second = proposals[proposals[:, 0] == 1]
+    assert second.numel() > 0
+    assert second[:, [1, 3]].max() <= 48 and second[:, [2, 4]].max() <= 32
+    assert out.extra[keys.IMAGE_SIZES] == [(64, 64), (32, 48)]
+
+
+def test_faster_rcnn_defaults_image_sizes_to_the_batch_size():
+    out = _tiny_faster_rcnn()(torch.randn(2, 3, 64, 64))
+    assert out.extra[keys.IMAGE_SIZES] == [(64, 64), (64, 64)]
+
+
+def test_faster_rcnn_appends_gt_boxes_to_the_rois():
+    model = _tiny_faster_rcnn()
+    rois = torch.tensor([[0.0, 0.0, 0.0, 20.0, 20.0]])
+    gt = [torch.tensor([[1.0, 2.0, 30.0, 40.0]]), torch.zeros((0, 4)), ]
+    out = model(torch.randn(2, 3, 64, 64), rois=rois, gt_boxes=gt)
+
+    assert torch.equal(out.extra[keys.ROI_BOXES], torch.tensor([[0.0, 0.0, 0.0, 20.0, 20.0], [0.0, 1.0, 2.0, 30.0, 40.0]]))
+    assert out.logits.shape == (2, 4)
+
+
+def test_fpn_presets_use_multi_level_roi_align():
+    model = _tiny_faster_rcnn()
+    assert model.region_extractor.stages == ("P2", "P3", "P4", "P5")

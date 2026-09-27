@@ -10,7 +10,12 @@ from ..heads.base import Head
 from ..necks.base import Neck
 from ..nn.features import HeadOutput
 from ..region_extractors.base import RegionExtractor
-from .base import Architecture
+from ..detection import keys
+from .base import Architecture, add_gt_boxes_to_rois, resolve_image_sizes
+from .faster_rcnn import FPN_ROI_STAGES
+
+
+__all__ = ["FastRCNN", "FastRCNNConfig", "fast_rcnn_r18_fpn", "fast_rcnn_r50_fpn"]
 
 
 @dataclass
@@ -19,7 +24,7 @@ class FastRCNNConfig(ComponentRefConfigMixin):
     neck: ComponentRef | None = component_field(Neck, default_name="fpn")
     region_extractor: ComponentRef = component_field(RegionExtractor, default_name="roi_align")
     roi_box_head: ComponentRef = component_field(Head, default_name="roi_box_head")
-    num_classes: int = 91
+    num_classes: int = 80  # foreground classes; must match the task's num_classes
 
 
 class FastRCNN(Architecture):
@@ -49,28 +54,48 @@ class FastRCNN(Architecture):
         info_str += f"(ROI Head) {self.roi_head.info()}\n"
         return info_str
 
-    def forward(self, images: torch.Tensor, rois: torch.Tensor) -> HeadOutput:
+    def forward(
+        self,
+        images: torch.Tensor,
+        rois: torch.Tensor | None = None,
+        image_sizes: list[tuple[int, int]] | torch.Tensor | None = None,
+        gt_boxes: list[torch.Tensor] | None = None,
+    ) -> HeadOutput:
+        """
+        :param images: (N, C, H, W) batch, possibly padded.
+        :param rois: (R, 5) precomputed proposals as (batch_index, x1, y1, x2, y2);
+                     the ragged collate builds them from each sample's ``target["proposals"]``.
+        :param image_sizes: per-image (h, w) before padding.
+        :param gt_boxes: per-image (G_i, 4) GT boxes appended to the ROIs (training only).
+        """
         if rois is None:
-            raise ValueError("FastRCNN requires explicit rois input.")
+            raise ValueError(
+                "FastRCNN requires explicit rois input. Put per-image (P, 4) proposals under "
+                "Sample.target['proposals'] and the ragged collate will batch them as 'rois'."
+            )
+        image_sizes = resolve_image_sizes(images, image_sizes)
+        if gt_boxes is not None:
+            rois = add_gt_boxes_to_rois(rois.float(), gt_boxes)
         features = self.backbone(images)
         detector_features = self.neck(features) if self.neck is not None else features
         roi_features = self.region_extractor(detector_features, rois)
         roi_output = self.roi_head(roi_features)
-        return HeadOutput(logits=roi_output.logits, values=roi_output.values, extra={"roi_boxes": rois})
+        extra = {keys.ROI_BOXES: rois, keys.IMAGE_SIZES: image_sizes}
+        return HeadOutput(logits=roi_output.logits, values=roi_output.values, extra=extra)
 
 
 fast_rcnn_configs = {
     "fast_rcnn_r18_fpn": FastRCNNConfig(
         backbone=ComponentRef("resnet18"),
         neck=ComponentRef("fpn"),
-        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
+        region_extractor=ComponentRef("roi_align", {"stages": FPN_ROI_STAGES, "output_size": 7}),
         roi_box_head=ComponentRef("roi_box_head", {"fc_hidden_features": 64}),
         num_classes=5,
     ),
     "fast_rcnn_r50_fpn": FastRCNNConfig(
         backbone=ComponentRef("resnet50"),
         neck=ComponentRef("fpn"),
-        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
+        region_extractor=ComponentRef("roi_align", {"stages": FPN_ROI_STAGES, "output_size": 7}),
         roi_box_head=ComponentRef("roi_box_head", {"fc_hidden_features": 64}),
         num_classes=5,
     ),

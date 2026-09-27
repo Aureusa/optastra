@@ -15,6 +15,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Tutorials: tutorials.md
   - Concepts: concepts.md
   - Extending: extending.md
   - API Reference: api.md
@@ -24,7 +25,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: ["optastra"]
+          paths: ["."]
           options:
             show_source: true
             show_root_heading: true

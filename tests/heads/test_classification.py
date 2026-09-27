@@ -44,7 +44,7 @@ def test_classification_head_raises_when_pooled_features_are_missing():
 
     features = FeatureMaps(feature_maps={"P5": torch.randn(1, 64, 7, 7)})
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="pooled"):
         head(features)
 
 

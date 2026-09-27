@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .layernorm2d import LayerNorm2d
-from .conv_norm_act import ConvNormAct
-from ..transformer.stochastic_depth import StochasticDepth
+from ...layers import LayerNorm2d, StochasticDepth
 
 
 class ConvNeXtBlock(nn.Module):
@@ -21,7 +19,7 @@ class ConvNeXtBlock(nn.Module):
         self.act = nn.GELU()
         self.pwconv2 = nn.Linear(int(dim * mlp_ratio), dim)
         self.gamma = nn.Parameter(layer_scale_init * torch.ones(dim)) if layer_scale_init > 0 else None
-        self.drop_path = StochasticDepth(drop_path)   # reuse your existing transformer block's DropPath
+        self.drop_path = StochasticDepth(drop_path)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x

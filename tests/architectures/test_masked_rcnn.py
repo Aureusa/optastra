@@ -39,3 +39,14 @@ def test_masked_rcnn_c5_variant_builds_without_fpn():
 
     assert isinstance(model, MaskRCNN)
     assert model.neck is None
+
+
+def test_mask_extractor_pools_from_the_same_stages_as_the_box_extractor():
+    for name in Architecture.list_all(filter="mask_rcnn"):
+        cfg = Architecture.get_default_config(name)
+        box = cfg.region_extractor.overrides
+        mask = cfg.mask_region_extractor.overrides
+        assert (box.get("stage"), box.get("stages")) == (mask.get("stage"), mask.get("stages")), name
+
+    model = Architecture.create("mask_rcnn_r18_c5", num_classes=3)
+    assert model.mask_region_extractor.stages == model.region_extractor.stages == ("C5",)

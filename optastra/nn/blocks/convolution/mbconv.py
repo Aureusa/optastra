@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from .conv_norm_act import ConvNormAct
 from .squeeze_excitation import SqueezeExcitation
-from ..transformer.stochastic_depth import StochasticDepth
+from ...layers import StochasticDepth
 
 
 class MBConvBlock(nn.Module):

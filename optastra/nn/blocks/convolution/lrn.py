@@ -8,6 +8,7 @@ References:
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class LocalResponseNorm(nn.Module):
@@ -34,26 +35,23 @@ class LocalResponseNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass for the LRN layer
-        .
+        Forward pass for the LRN layer:
+            b_c = a_c / (k + alpha / size * sum_{c' in window(c)} a_{c'}^2) ** beta
+        (same convention as torch.nn.LocalResponseNorm / Caffe).
+
         :param x: Input tensor of shape (N, C, H, W).
         :return: Normalized tensor of the same shape as input.
         """
         # LRN in AlexNet normalizes across adjacent channels for each spatial location.
-        # We implement this as a local average over the channel dimension for each (H, W).
+        # We implement this as a zero-padded local average of a^2 over the channel dimension
+        # for each (H, W). The average already divides by `size`, so alpha is NOT divided again.
         b, c, h, w = x.shape
-        x_flat = x.permute(0, 2, 3, 1).reshape(-1, c)
+        x_flat = x.permute(0, 2, 3, 1).reshape(-1, 1, c)          # (N*H*W, 1, C)
         squared_input = x_flat.pow(2)
+        # window centred on c: size // 2 channels before, (size - 1) // 2 after (also correct for even sizes)
+        squared_input = F.pad(squared_input, (self.size // 2, (self.size - 1) // 2))
+        mean_sq = F.avg_pool1d(squared_input, kernel_size=self.size, stride=1)   # (N*H*W, 1, C)
 
-        pooled = nn.functional.avg_pool1d(
-            squared_input.unsqueeze(1),
-            kernel_size=self.size,
-            stride=1,
-            padding=(self.size - 1) // 2,
-        ).squeeze(1)
-
-        scale = self.k + (self.alpha / self.size) * pooled
+        scale = self.k + self.alpha * mean_sq
         normalized_flat = x_flat / scale.pow(self.beta)
-        normalized_output = normalized_flat.reshape(b, h, w, c).permute(0, 3, 1, 2)
-        return normalized_output
-    
+        return normalized_flat.reshape(b, h, w, c).permute(0, 3, 1, 2)

@@ -8,6 +8,9 @@ from ...nn.blocks.geometry.boxes import pairwise_iou
 from ..base_matcher import Matcher
 
 
+__all__ = ["IoUMatcher", "IoUMatcherConfig"]
+
+
 @dataclass
 class IoUMatcherConfig:
     fg_iou_thresh: float = 0.5
@@ -15,7 +18,7 @@ class IoUMatcherConfig:
     allow_low_quality_matches: bool = True
 
 
-class IoUMatcher:
+class IoUMatcher(Matcher):
     """Match proposals/anchors to GT using IoU thresholds."""
 
     def __init__(self, cfg: IoUMatcherConfig):

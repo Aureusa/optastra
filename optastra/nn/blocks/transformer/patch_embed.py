@@ -8,6 +8,11 @@ class PatchEmbedding(nn.Module):
     Splits an image into non-overlapping patches and linearly projects
     each to embed_dim -- implemented as a single strided conv, equivalent
     to the 'flatten patches, then linear' formulation but faster.
+
+    `img_size` only defines the *reference* grid (grid_size / num_patches),
+    e.g. for sizing a learned positional embedding. forward() accepts any
+    input size; trailing pixels that don't fill a whole patch are dropped
+    (plain strided-conv semantics).
     """
 
     def __init__(self, img_size: int = 224, patch_size: int = 16, in_channels: int = 3, embed_dim: int = 768):
@@ -24,4 +29,3 @@ class PatchEmbedding(nn.Module):
         # (B, C, H, W) -> (B, embed_dim, H/P, W/P) -> (B, num_patches, embed_dim)
         x = self.proj(x)
         return x.flatten(2).transpose(1, 2)
-    

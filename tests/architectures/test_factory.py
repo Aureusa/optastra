@@ -7,7 +7,7 @@ def test_architecture_config_returns_faster_rcnn_defaults():
 
     assert cfg.backbone.name == "resnet50"
     assert cfg.neck.name == "fpn"
-    assert cfg.num_classes == 91
+    assert cfg.num_classes == 80  # same default as detection_task
 
 
 def test_architecture_create_builds_registered_faster_rcnn_variant():

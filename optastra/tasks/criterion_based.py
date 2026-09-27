@@ -7,16 +7,25 @@ from .base import Task
 from ..nn.features import HeadOutput
 
 
+__all__ = ["CriterionBasedTask"]
+
+
 class CriterionBasedTask(Task, ABC):
     """Task family whose loss/metric/decode logic is fully owned by a
     Criterion + Postprocessor component, not by the Task itself. Detection,
     segmentation, and future criterion-driven tasks subclass this and only
     implement the batch-shape methods (validate_batch, split_inputs_targets,
     preprocess_targets, forward_model) -- which genuinely differ per task
-    family and don't belong behind a config flag."""
+    family and don't belong behind a config flag.
 
-    criterion: Any    # set by subclass __init__ via cfg.criterion.resolve(SomeCriterionFactory, ...)
+    Subclass ``__init__`` sets ``criterion`` (e.g. via
+    ``cfg.criterion.resolve(SomeCriterionFactory, ...)``), optionally
+    ``postprocessor``, and ``num_classes`` (forwarded to the postprocessor).
+    """
+
+    criterion: Any
     postprocessor: Any | None = None
+    num_classes: int | None = None
 
     def validate_predictions(self, raw_preds: Any) -> None:
         if not isinstance(raw_preds, HeadOutput):
@@ -35,5 +44,6 @@ class CriterionBasedTask(Task, ABC):
     def decode_predictions(self, raw_preds: HeadOutput) -> Any:
         if self.postprocessor is None:
             return raw_preds
-        return self.postprocessor.process(raw_preds) # TODO: This expects num_classes to be passed as well...
-    
+        if self.num_classes is None:
+            raise ValueError(f"{type(self).__name__} must set 'num_classes' to decode predictions.")
+        return self.postprocessor.process(raw_preds, num_classes=self.num_classes)

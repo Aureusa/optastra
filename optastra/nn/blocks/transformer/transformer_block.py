@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from .attention import MultiHeadSelfAttention
-from .stochastic_depth import StochasticDepth
+from ...layers import StochasticDepth
 from ..readout.mlp import MLP
 
 

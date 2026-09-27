@@ -1,7 +1,5 @@
 # optim/scheduler_base.py
 from __future__ import annotations
-from dataclasses import replace, fields
-from typing import Any
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 
@@ -23,7 +21,6 @@ class Scheduler(Factory["Scheduler"]):
         cls._check_registered(name)
 
         entrypoint = cls._registry.get_entrypoint(name)
-        default_cfg = cls._registry.get_default_config(name)
-        cfg = replace(default_cfg, **overrides)
+        cfg = cls._build_cfg(name, overrides)
         return entrypoint(optimizer, cfg)
     

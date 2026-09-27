@@ -16,12 +16,11 @@ import torch.nn as nn
 
 from .base import Backbone
 from ..nn.features import FeatureMaps, FeatureSpec
+from ..nn.layers import LayerNorm2d, drop_path_rates
 from ..nn.blocks.convolution.convnext import ConvNeXtBlock, ConvNeXtDownsample
-from ..nn.blocks.convolution.layernorm2d import LayerNorm2d
 
 
-
-__all__ = ["ConvNeXt"]
+__all__ = ["ConvNeXt", "ConvNeXtConfig"]
 
 
 @dataclass
@@ -70,8 +69,7 @@ class ConvNeXt(Backbone):
 
         # linearly scale drop_path rate across all blocks, deepest block gets
         # the highest rate -- same convention as ViT's drop_path_rate
-        total_depth = sum(cfg.depths)
-        dpr = [x.item() for x in torch.linspace(0, cfg.drop_path_rate, total_depth)]
+        dpr = drop_path_rates(cfg.drop_path_rate, sum(cfg.depths))
 
         self.downsamples = nn.ModuleList()
         self.stages = nn.ModuleList()
@@ -99,6 +97,17 @@ class ConvNeXt(Backbone):
             strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
         )
 
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """ConvNeXt convention: truncated-normal (std 0.02) weights and zero biases
+        for every conv and linear layer; LayerNorms keep their (1, 0) defaults."""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
     def forward(self, images: torch.Tensor) -> FeatureMaps:
         """
         Forward pass through the ConvNeXt backbone.
@@ -119,7 +128,7 @@ convnext_configs = {
     "convnext_tiny": ConvNeXtConfig(depths=[3, 3, 9, 3], dims=[96, 192, 384, 768]),
     "convnext_small": ConvNeXtConfig(depths=[3, 3, 27, 3], dims=[96, 192, 384, 768]),
     "convnext_base": ConvNeXtConfig(depths=[3, 3, 27, 3], dims=[128, 256, 512, 1024]),
-    "convnext_large": ConvNeXtConfig(depths=[3, 3, 27, 3], dims=[192, 384, 768, 1536]),\
+    "convnext_large": ConvNeXtConfig(depths=[3, 3, 27, 3], dims=[192, 384, 768, 1536]),
     "convnext_xlarge": ConvNeXtConfig(depths=[3, 3, 27, 3], dims=[256, 512, 1024, 2048]),
 }
 

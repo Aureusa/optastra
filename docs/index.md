@@ -45,7 +45,8 @@ model = optastra.build_sequential_model(
 )
 ```
 
-And full experiments are configuration, not code:
+And the model / task / optimizer graph of an experiment is configuration,
+not code:
 
 ```python
 cfg = optastra.ExperimentConfig(
@@ -54,7 +55,14 @@ cfg = optastra.ExperimentConfig(
     optimizer=optastra.ComponentRef("adamw", {"lr": 1e-4}),
 )
 built = optastra.build_experiment_from_config(cfg)
+# -> {"model": ..., "task": ..., "optimizer": ..., "scheduler": None}
 ```
 
+`ExperimentConfig` round-trips through YAML. Data, transforms, hooks and
+trainer settings are still wired in Python (see
+`examples/05_full_training_pipeline.py`); bringing them into the config is
+planned.
+
 Continue to [Getting Started](getting-started.md) to run this yourself,
+[Tutorials](tutorials.md) for end-to-end scenarios,
 or [Concepts](concepts.md) to see how the pieces fit together.

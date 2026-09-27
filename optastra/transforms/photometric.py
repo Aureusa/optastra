@@ -1,10 +1,16 @@
+"""
+Photometric transforms -- they never touch the target, so they are safe for
+every task family. All of them first convert integer images to float
+(`functional.to_float_image`) and then work on any channel count and value
+range; see functional.py for how the value range is inferred.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
-import random
 import torchvision.transforms.functional as F
 
+from . import functional as FN
+from . import rng
 from .base import Transform
-from .functional import safe_solarize
 
 
 __all__ = ["ColorJitter", "RandomGrayscale", "GaussianBlur", "Solarize"]
@@ -14,10 +20,16 @@ __all__ = ["ColorJitter", "RandomGrayscale", "GaussianBlur", "Solarize"]
 class ColorJitterConfig:
     strength: float = 0.5   # scales all four sub-jitters together, matches SimCLR/BYOL convention
     p: float = 0.8
+    value_range: tuple[float, float] | None = None   # None -> inferred per image, see functional.py
 
 
 class ColorJitter(Transform):
-    """Photometric only -- never touches target, safe on any task family."""
+    """Random brightness, contrast, saturation, then hue (in that order).
+
+    Channels: brightness/contrast/saturation work for any C (saturation
+    blends each band towards the per-pixel band mean for C != 3, and is a
+    no-op for C == 1). Hue is only defined for RGB, so it is skipped when
+    C != 3."""
 
     def __init__(self, cfg: ColorJitterConfig = ColorJitterConfig()):
         self.cfg = cfg
@@ -25,18 +37,20 @@ class ColorJitter(Transform):
         self.brightness, self.contrast, self.saturation, self.hue = 0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s
 
     def __call__(self, sample):
-        if random.random() >= self.cfg.p:
+        img = FN.to_float_image(sample.image)
+        sample.image = img
+        if rng.rand() >= self.cfg.p:
             return sample
-        img = sample.image
+        value_range = FN.infer_value_range(img, self.cfg.value_range)
         for fn, factor_range in [
-            (F.adjust_brightness, self.brightness),
-            (F.adjust_contrast, self.contrast),
-            (F.adjust_saturation, self.saturation),
+            (FN.adjust_brightness, self.brightness),
+            (FN.adjust_contrast, self.contrast),
+            (FN.adjust_saturation, self.saturation),
         ]:
-            factor = random.uniform(max(0, 1 - factor_range), 1 + factor_range)
-            img = fn(img, factor)
-        hue_factor = random.uniform(-self.hue, self.hue)
-        img = F.adjust_hue(img, hue_factor)
+            factor = rng.uniform(max(0, 1 - factor_range), 1 + factor_range)
+            img = fn(img, factor, value_range)
+        if img.shape[-3] == 3:
+            img = FN.adjust_hue(img, rng.uniform(-self.hue, self.hue), value_range)
         sample.image = img
         return sample
 
@@ -47,14 +61,19 @@ class RandomGrayscaleConfig:
 
 
 class RandomGrayscale(Transform):
+    """Replace every channel by the image's luminance, keeping the channel
+    count. For RGB this is the usual ITU-R 601 grayscale; for any other C
+    every band becomes the band mean (a "panchromatic" image)."""
+
     def __init__(self, cfg: RandomGrayscaleConfig = RandomGrayscaleConfig()):
         self.cfg = cfg
 
     def __call__(self, sample):
-        if random.random() < self.cfg.p:
-            sample.image = F.rgb_to_grayscale(sample.image, num_output_channels=3)
+        sample.image = FN.to_float_image(sample.image)
+        if rng.rand() < self.cfg.p:
+            sample.image = FN.grayscale(sample.image)
         return sample
-    
+
 
 @dataclass
 class GaussianBlurConfig:
@@ -64,35 +83,45 @@ class GaussianBlurConfig:
 
 
 class GaussianBlur(Transform):
+    """Gaussian blur of every channel independently; any C and value range."""
+
     def __init__(self, cfg: GaussianBlurConfig = GaussianBlurConfig()):
         self.cfg = cfg
 
     def __call__(self, sample):
-        if random.random() >= self.cfg.p:
+        img = FN.to_float_image(sample.image)
+        sample.image = img
+        if rng.rand() >= self.cfg.p:
             return sample
-        img = sample.image
         k = self.cfg.kernel_size
         if k is None:
             shorter = min(img.shape[-2], img.shape[-1])
             k = max(3, int(0.1 * shorter) | 1)   # force odd
-        sigma = random.uniform(*self.cfg.sigma_range)
+        sigma = rng.uniform(*self.cfg.sigma_range)
         sample.image = F.gaussian_blur(img, kernel_size=[k, k], sigma=[sigma, sigma])
         return sample
-    
+
 
 @dataclass
 class SolarizeConfig:
     p: float = 0.2
-    threshold: float = 0.5   # image assumed in [0,1] range; adjust if your pipeline uses [0,255]
+    threshold: float = 0.5   # fraction of the value range: pixels >= lo + threshold * (hi - lo) are inverted
+    value_range: tuple[float, float] | None = None   # None -> inferred per image, see functional.py
 
 
 class Solarize(Transform):
+    """Invert every value above a threshold. `threshold` is relative to the
+    value range, so for standard [0, 1] images it is simply the pixel value."""
+
     def __init__(self, cfg: SolarizeConfig = SolarizeConfig()):
         self.cfg = cfg
 
     def __call__(self, sample):
-        if random.random() < self.cfg.p:
-            sample.image = safe_solarize(sample.image, self.cfg.threshold)
+        img = FN.to_float_image(sample.image)
+        sample.image = img
+        if rng.rand() < self.cfg.p:
+            lo, hi = FN.infer_value_range(img, self.cfg.value_range)
+            sample.image = FN.solarize(img, lo + self.cfg.threshold * (hi - lo), (lo, hi))
         return sample
 
 

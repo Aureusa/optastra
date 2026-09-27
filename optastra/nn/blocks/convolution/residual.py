@@ -3,10 +3,9 @@ This module contains the implementation of residual blocks in PyTorch.
 It implements a few main ideas:
     - the basic residual block (Reference: He et al. 2015)
     - the bottleneck residual block (Reference: He et al. 2015)
-    - the downsampled residual block (Reference: He et al. 2015)
-    - the pre-activation residual block (Reference: He et al. 2016)
+    - the projection shortcut used when a block downsamples or changes width (He et al. 2015)
+    - the pre-activation variants of both blocks (Reference: He et al. 2016)
 """
-import torch
 import torch.nn as nn
 
 from .conv_norm_act import ConvNormAct
@@ -87,6 +86,7 @@ class ResidualBlock(nn.Module): # (ResNet-18/34)
         :param preact: Whether to use pre-activation. Default is False.
         """
         super(ResidualBlock, self).__init__()
+        self.preact = preact
         self.conv1 = ConvNormAct(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -113,7 +113,11 @@ class ResidualBlock(nn.Module): # (ResNet-18/34)
         )
 
         self.act = nn.ReLU(inplace=True)
-        self.preact = preact
+
+    @property
+    def last_norm(self) -> nn.Module:
+        """Norm layer closing the residual branch (zero-init target, non-preact only)."""
+        return self.conv2.norm
 
     def forward(self, x):
         identity = x
@@ -193,6 +197,11 @@ class BottleneckResidualBlock(nn.Module): # (ResNet-50/101/152)
         if not preact:
             self.act = nn.ReLU(inplace=True)
 
+    @property
+    def last_norm(self) -> nn.Module:
+        """Norm layer closing the residual branch (zero-init target, non-preact only)."""
+        return self.conv3.norm
+
     def forward(self, x):
         identity = x
 
@@ -207,75 +216,3 @@ class BottleneckResidualBlock(nn.Module): # (ResNet-50/101/152)
         if not self.preact:
             out = self.act(out)
         return out
-
-
-class DownsampleResidualBlock(nn.Module):
-    expansion = 1
-
-    def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            stride: int = 2,
-            preact: bool = False
-        ):
-        """
-        Initializes the Downsample Residual Block. This block is used to reduce
-        the spatial dimensions of the input while increasing the number of channels.
-        Conv -> Norm -> Act -> Conv -> Norm -> Add -> Act
-        or with pre-activation:
-        Norm -> Act -> Conv -> Norm -> Act -> Conv -> Add
-
-        :param in_channels: Number of input channels.
-        :param out_channels: Number of output channels.
-        :param stride: Stride for the first convolutional layer. Default is 2.
-        """
-        super(DownsampleResidualBlock, self).__init__()
-        self.conv1 = ConvNormAct(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=3,
-            stride=stride,
-            padding=1,
-            norm="batchnorm",
-            activation="relu",
-            preact=preact
-        )
-        self.conv2 = ConvNormAct(
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            norm="batchnorm",
-            activation=None if not preact else "relu",
-            preact=preact
-        )
-        self.downsample = ConvNormAct(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=1,
-            stride=stride,
-            padding=0,
-            norm="batchnorm",
-            activation=None if not preact else "relu",
-            preact=preact
-        )
-
-        self.preact = preact
-        if not preact:
-            self.act = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        identity = x
-
-        out = self.conv1(x)
-        out = self.conv2(out)
-
-        identity = self.downsample(x)
-
-        out += identity
-        if not self.preact:
-            out = self.act(out)
-        return out
-    

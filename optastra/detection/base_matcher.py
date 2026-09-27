@@ -5,6 +5,9 @@ from ..core.factory import Factory
 from ..core.registry import FamilyRegistry
 
 
+__all__ = ["Matcher"]
+
+
 class Matcher(Factory["Matcher"]):
     """Match proposals/anchors to GT using IoU thresholds."""
 

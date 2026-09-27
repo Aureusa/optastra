@@ -31,5 +31,5 @@ Once no old runs need resuming:
 
 ## Cleanup made redundant by `Hook.priority`
 
-- [ ] `defaults.py` — `default_hooks_list.insert(0, ResumeHook(...))` / `insert(1, BestCheckpointHook(...))`:
+- [x] `defaults.py` — `default_hooks_list.insert(0, ResumeHook(...))` / `insert(1, BestCheckpointHook(...))`:
       position no longer matters (priority sorting handles it); just append.

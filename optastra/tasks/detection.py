@@ -1,37 +1,50 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 import torch
 
 from ..core.component_ref import ComponentRef, component_field, ComponentRefConfigMixin
 from .base import Stage, Task
+from .criterion_based import CriterionBasedTask
 from ..detection import DetectionCriterion, Postprocessor
-from ..nn.features import FeatureMaps, HeadOutput
+
+
+__all__ = ["DetectionTask", "DetectionTaskConfig"]
 
 
 @dataclass
 class DetectionTaskConfig(ComponentRefConfigMixin):
+    # Foreground classes (background excluded). Must equal the architecture's
+    # num_classes -- the criterion checks the logits and raises on a mismatch.
     num_classes: int = 80
     criterion: ComponentRef = component_field(DetectionCriterion, default_name="rcnn_criterion")
     postprocessor: ComponentRef = component_field(Postprocessor, default_name="rcnn_postprocessor")
 
 
-class DetectionTask(Task):
+class DetectionTask(CriterionBasedTask):
+    """Box / instance detection with a pluggable criterion and postprocessor.
+
+    Batch contract (produced by the ``ragged`` collate):
+        inputs       (N, C, H, W) images, padded to a common size
+        targets      list of per-image dicts: boxes (G, 4) XYXY, labels (G,) in [0, num_classes), optional masks
+        image_sizes  optional list of per-image (h, w) before padding
+        rois         optional (R, 5) precomputed proposals (Fast R-CNN)
+
+    The model is called as ``model(images, rois=..., image_sizes=..., gt_boxes=...)``
+    with only the keys present in the batch; ``gt_boxes`` is passed during
+    training so the architecture can add them to its proposals.
+    """
+
     required_fields = ()
     collate = "ragged"
 
     def __init__(self, cfg: DetectionTaskConfig = DetectionTaskConfig()):
         self.cfg = cfg
-
+        self.num_classes = cfg.num_classes
         self.criterion = cfg.criterion.resolve(DetectionCriterion, num_classes=cfg.num_classes)
         self.postprocessor = cfg.postprocessor.resolve(Postprocessor)
-
-    def validate_predictions(self, raw_preds: Any) -> None:
-        if not isinstance(raw_preds, HeadOutput):
-            raise TypeError(f"Model output must be a HeadOutput, got {type(raw_preds)}.")
-        self.criterion.validate_predictions(raw_preds)
 
     def validate_batch(self, batch: Mapping[str, Any], stage: Stage = "train"):
         if "inputs" not in batch:
@@ -40,9 +53,15 @@ class DetectionTask(Task):
             raise ValueError("DetectionTask expects 'targets' for train/val/test.")
 
     def split_inputs_targets(self, batch: Mapping[str, Any], stage: Stage = "train"):
+        inputs: dict[str, Any] = {"images": batch["inputs"]}
+        for key in ("image_sizes", "rois"):
+            if batch.get(key) is not None:
+                inputs[key] = batch[key]
         if stage == "predict":
-            return batch["inputs"], None
-        return batch["inputs"], batch["targets"]
+            return inputs, None
+        if stage == "train":
+            inputs["gt_boxes"] = [target["boxes"] for target in batch["targets"]]
+        return inputs, batch["targets"]
 
     def preprocess_targets(self, raw_targets: list[Mapping[str, Any]]) -> list[dict[str, torch.Tensor]]:
         processed: list[dict[str, torch.Tensor]] = []
@@ -59,25 +78,10 @@ class DetectionTask(Task):
         return processed
 
     def forward_model(self, model, inputs):
-        if isinstance(inputs, Mapping) and "rois" in inputs:
-            return model(inputs["images"], inputs["rois"])
-        return model(inputs)
-
-    def compute_losses(self, raw_preds: HeadOutput, targets: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
-        return self.criterion.compute_losses(raw_preds, targets)
-
-    def reduce_losses(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
-        return sum(losses.values())
-
-    def compute_metrics(self, raw_preds: HeadOutput, targets: list[dict[str, torch.Tensor]]) -> dict[str, float]:
-        return self.criterion.compute_metrics(raw_preds, targets)
-
-    def decode_predictions(self, raw_preds: HeadOutput):
-        image_size = None
-        rpn_output = raw_preds.extra.get("rpn")
-        if isinstance(rpn_output, FeatureMaps):
-            image_size = rpn_output.extra.get("image_size")
-        return self.postprocessor.process(raw_preds, num_classes=self.cfg.num_classes)
+        if not isinstance(inputs, Mapping):
+            return model(inputs)
+        kwargs = {key: inputs[key] for key in ("rois", "image_sizes", "gt_boxes") if key in inputs}
+        return model(inputs["images"], **kwargs)
 
 
 detection_task_configs = {

@@ -42,7 +42,7 @@ def component_field(
     """
     Declares a ComponentRef field and which Factory describes it -- read by
     resolve_config()/_serialize_config() to expand this field's defaults
-    when printing or dumping a config to YAML. Building is a separate,
+    when printing a fully-resolved config. Building is a separate,
     explicit step: the call site does `cfg.<field>.resolve(SomeFactory)`
     directly (it already knows which Factory it needs -- that's not
     something that has to be rediscovered through this metadata).
@@ -97,9 +97,10 @@ class ComponentRef:
 
 
 def _serialize_config(value: Any) -> Any:
-    """Recursively flatten dataclasses/dicts/lists to YAML-safe values.
-    Dataclass fields typed as ComponentRef are resolved via their own
-    declared factory metadata -- no separate inference needed."""
+    """Recursively flatten dataclasses/dicts/lists to YAML-safe values, for
+    DISPLAY: dataclass fields typed as ComponentRef are expanded to their full
+    resolved config via their own declared factory metadata. The result is not
+    meant to be loaded back -- use config_to_plain() for a round-trippable dump."""
     if isinstance(value, ComponentRef):
         return {"name": value.name, **_serialize_config(value.overrides)}
     if is_dataclass(value) and not isinstance(value, type):
@@ -117,4 +118,47 @@ def _serialize_config(value: Any) -> Any:
         return [_serialize_config(v) for v in value]
     if isinstance(value, type):
         return value.__name__
+    return value
+
+
+def config_to_plain(value: Any) -> Any:
+    """
+    Convert a config (dataclass / ComponentRef / dict / list, nested) to plain
+    YAML-safe data that can be loaded back with `config_from_plain` -- unlike
+    `_serialize_config`, which expands defaults for *display* and is one-way.
+
+    - ComponentRef -> {"name": ..., "overrides": {...}} (overrides only, not expanded)
+    - dataclass    -> {field: value, ...}
+    - tuple        -> list (YAML has no tuples)
+    - a class or any other non-plain object -> TypeError, instead of silently
+      writing something that cannot be loaded back.
+    """
+    if isinstance(value, ComponentRef):
+        return {"name": value.name, "overrides": config_to_plain(value.overrides)}
+    if is_dataclass(value) and not isinstance(value, type):
+        return {f.name: config_to_plain(getattr(value, f.name)) for f in dc_fields(value)}
+    if isinstance(value, dict):
+        return {k: config_to_plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [config_to_plain(v) for v in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    raise TypeError(
+        f"Config value {value!r} of type {type(value).__name__} is not YAML-safe. "
+        f"Use a plain value (e.g. a string name) instead."
+    )
+
+
+def config_from_plain(value: Any) -> Any:
+    """
+    Inverse of `config_to_plain` for ComponentRefs: every
+    {"name": str, "overrides": dict} mapping (at any depth) becomes a ComponentRef
+    again; everything else is returned as plain data.
+    """
+    if isinstance(value, dict):
+        if set(value) == {"name", "overrides"} and isinstance(value["name"], str) and isinstance(value["overrides"], dict):
+            return ComponentRef(value["name"], config_from_plain(value["overrides"]))
+        return {k: config_from_plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [config_from_plain(v) for v in value]
     return value

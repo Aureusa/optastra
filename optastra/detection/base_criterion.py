@@ -6,6 +6,9 @@ from ..core.registry import FamilyRegistry
 from ..nn.features import HeadOutput
 
 
+__all__ = ["DetectionCriterion"]
+
+
 class DetectionCriterion(Factory["DetectionCriterion"]):
     """Base interface for task-pluggable detection loss/metric implementations."""
 

@@ -44,8 +44,31 @@ def generate_anchors(
     shift_y, shift_x = torch.meshgrid(shifts_y, shifts_x, indexing="ij")
     shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=-1).reshape(-1, 4)  # (H*W, 4)
 
+    # Location-major order: all A anchors of cell (0, 0), then all A anchors of cell (0, 1), ...
     anchors = base_anchors[None, :, :] + shifts[:, None, :]
     return anchors.reshape(-1, 4)
+
+
+def flatten_anchor_predictions(pred: torch.Tensor, values_per_anchor: int) -> torch.Tensor:
+    """Reorder a dense per-anchor prediction map so row ``i`` belongs to anchor ``i``.
+
+    A conv head predicts ``(N, A * K, H, W)`` with channels grouped anchor-major
+    (the K values of anchor 0, then anchor 1, ...). :func:`generate_anchors`
+    enumerates anchors location-major (all A anchors of one cell, then the next
+    cell). A plain ``reshape(-1)`` of the head output would pair the score of
+    anchor ``a`` at cell ``(y, x)`` with a different anchor, so every consumer of
+    RPN-style outputs must go through this function.
+
+    :param pred: Tensor of shape (N, A * K, H, W).
+    :param values_per_anchor: K -- 1 for objectness logits, 4 for box deltas.
+    :return: Tensor of shape (N, H * W * A, K), in the same order as generate_anchors().
+    """
+    n, c, h, w = pred.shape
+    if c % values_per_anchor != 0:
+        raise ValueError(f"Channel count {c} is not divisible by values_per_anchor={values_per_anchor}.")
+    num_anchors = c // values_per_anchor
+    pred = pred.view(n, num_anchors, values_per_anchor, h, w)
+    return pred.permute(0, 3, 4, 1, 2).reshape(n, h * w * num_anchors, values_per_anchor)
 
 
 def encode_boxes(

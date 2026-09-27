@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 from dataclasses import replace, fields, asdict
 from typing import Any, ClassVar, Generic, TypeVar
 
@@ -16,6 +17,10 @@ class Factory(Generic[T]):
     component family with no upstream wiring (Backbone, Task, Algorithm).
     Subclasses only need to set `_registry` and, optionally, override
     `_post_create` to validate the built instance.
+
+    Components are normally registered with a default config dataclass and
+    built as `entrypoint(cfg)`. A component registered without a config is
+    "configless": it is built as `entrypoint()` and accepts no overrides.
     """
 
     _registry: ClassVar[FamilyRegistry]
@@ -38,7 +43,7 @@ class Factory(Generic[T]):
             raise ValueError(f"{cls._registry.family} '{name}' is not registered.")
 
     @classmethod
-    def register(cls, fn=None, *, config: Any | None = None):
+    def register(cls, fn=None, *, config: Any | None = None, name: str | None = None):
         """
         Register a component under this family's registry. Use directly on
         the family base class -- no need to import a registry module or a
@@ -49,15 +54,31 @@ class Factory(Generic[T]):
 
             @Backbone.register(config=MyBackboneConfig())
             def my_backbone(cfg): ...
+
+        `name` overrides the registry key (default: the function's __name__),
+        which lets a table of variants be registered in a loop:
+
+            for variant, cfg in my_configs.items():
+                Backbone.register(MyBackbone, config=cfg, name=variant)
         """
         def decorator(inner_fn):
-            return cls._registry.register(inner_fn, default_config=config)
+            return cls._registry.register(inner_fn, default_config=config, name=name)
         return decorator(fn) if fn is not None else decorator
 
     @classmethod
     def _build_cfg(cls, name: str, overrides: dict) -> Any:
+        """Registry default + overrides, as a fresh deep copy: mutating a built
+        component's cfg (e.g. `model.cfg.layers.append(...)`) can never leak
+        back into the registered default."""
         default_cfg = cls._registry.get_default_config(name)
-        return replace(default_cfg, **overrides) if default_cfg is not None else None
+        if default_cfg is None:
+            if overrides:
+                raise TypeError(
+                    f"{cls._registry.family} '{name}' has no config, so it takes no overrides "
+                    f"(got {sorted(overrides)})."
+                )
+            return None
+        return replace(copy.deepcopy(default_cfg), **overrides)
 
     @classmethod
     def create(cls, name: str, **overrides) -> T:
@@ -86,7 +107,8 @@ class Factory(Generic[T]):
 
     @classmethod
     def get_default_config(cls, name: str) -> Any:
-        return cls._registry.get_default_config(name)
+        """A deep copy of the registered default config (None if configless)."""
+        return copy.deepcopy(cls._registry.get_default_config(name))
 
     @classmethod
     def list_all(cls, module: str | None = None, filter: str | None = None) -> list[str]:
@@ -146,16 +168,21 @@ def list_all_registered_families() -> list[str]:
 
 def get_component_parameters(name: str, family: str | None = None) -> dict[str, Any]:
     """
-    Get the default config parameters for a registered component.
+    Get the default config parameters for a registered component
+    ({} for a configless component).
     """
+    def _params(cls) -> dict[str, Any]:
+        cfg = cls.get_default_config(name)
+        return asdict(cfg) if cfg is not None else {}
+
     if family is not None:
         cls = FACTORIES.get(family)
         if cls is None:
             raise ValueError(f"Family '{family}' is not registered.")
-        return asdict(cls.get_default_config(name))
+        return _params(cls)
 
     for family, cls in FACTORIES.items():
         if cls._registry.is_registered(name):
-            return asdict(cls.get_default_config(name))
+            return _params(cls)
 
     raise ValueError(f"Component '{name}' is not registered in any family.")

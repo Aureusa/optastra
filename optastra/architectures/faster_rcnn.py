@@ -8,7 +8,11 @@ from ..heads.base import Head
 from ..nn.features import FeatureMaps, HeadOutput
 from ..proposal_generators.base import ProposalGenerator
 from ..region_extractors.base import RegionExtractor
-from .base import Architecture
+from ..detection import keys
+from .base import Architecture, add_gt_boxes_to_rois, resolve_image_sizes
+
+
+__all__ = ["FasterRCNN", "FasterRCNNConfig", "FPN_ROI_STAGES", "faster_rcnn_r18_fpn", "faster_rcnn_r50_fpn", "faster_rcnn_r18_c5", "faster_rcnn_r50_c5"]
 
 
 @dataclass
@@ -18,7 +22,7 @@ class FasterRCNNConfig(ComponentRefConfigMixin):
     proposal_generator: ComponentRef = component_field(ProposalGenerator, default_name="rpn")
     region_extractor: ComponentRef = component_field(RegionExtractor, default_name="roi_align")
     roi_box_head: ComponentRef = component_field(Head, default_name="roi_box_head")
-    num_classes: int = 91
+    num_classes: int = 80  # foreground classes; must match the task's num_classes
 
 
 class FasterRCNN(Architecture):
@@ -52,10 +56,10 @@ class FasterRCNN(Architecture):
         info_str += f"(ROI Head) {self.roi_head.info()}\n"
         return info_str
 
-    def _forward_detector(self, images: torch.Tensor):
+    def _forward_detector(self, images: torch.Tensor, image_sizes: list[tuple[int, int]]):
         features = self.backbone(images)
         detector_features = self.neck(features) if self.neck is not None else features
-        detector_features.extra["image_size"] = (int(images.shape[-2]), int(images.shape[-1]))
+        detector_features.extra[keys.IMAGE_SIZES] = image_sizes
         rpn_outputs = self.proposal_generator(detector_features)
         return detector_features, rpn_outputs
 
@@ -64,8 +68,11 @@ class FasterRCNN(Architecture):
         detector_features: FeatureMaps,
         rpn_outputs: FeatureMaps,
         rois: torch.Tensor | None = None,
+        gt_boxes: list[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, FeatureMaps]:
         roi_boxes = self._resolve_rois(rois, rpn_outputs)
+        if gt_boxes is not None:
+            roi_boxes = add_gt_boxes_to_rois(roi_boxes, gt_boxes)
         roi_features = self.region_extractor(detector_features, roi_boxes)
         return roi_boxes, roi_features
 
@@ -74,39 +81,55 @@ class FasterRCNN(Architecture):
         if rois is not None:
             return rois
 
-        if rpn_outputs.extra and "proposals" in rpn_outputs.extra and isinstance(rpn_outputs.extra["proposals"], torch.Tensor):
-            return rpn_outputs.extra["proposals"]
-
-        if "proposals" in rpn_outputs.feature_maps and isinstance(rpn_outputs.feature_maps["proposals"], torch.Tensor):
-            return rpn_outputs.feature_maps["proposals"]
+        proposals = rpn_outputs.extra.get(keys.PROPOSALS) if rpn_outputs.extra else None
+        if isinstance(proposals, torch.Tensor):
+            return proposals
 
         raise ValueError(
             "FasterRCNN requires proposal boxes for ROI extraction. Provide 'rois' to forward(), "
-            "or use a proposal generator that returns a tensor under `FeatureMaps.extra['proposals']`."
+            f"or use a proposal generator that returns a tensor under `FeatureMaps.extra['{keys.PROPOSALS}']`."
         )
 
-    def forward(self, images: torch.Tensor, rois: torch.Tensor | None = None) -> HeadOutput:
-        detector_features, rpn_outputs = self._forward_detector(images)
-        roi_boxes, roi_features = self._forward_roi_features(detector_features, rpn_outputs, rois)
+    def forward(
+        self,
+        images: torch.Tensor,
+        rois: torch.Tensor | None = None,
+        image_sizes: list[tuple[int, int]] | torch.Tensor | None = None,
+        gt_boxes: list[torch.Tensor] | None = None,
+    ) -> HeadOutput:
+        """
+        :param images: (N, C, H, W) batch, possibly padded.
+        :param rois: optional (R, 5) ROIs that replace the RPN proposals.
+        :param image_sizes: per-image (h, w) before padding; proposals are clipped to these.
+        :param gt_boxes: per-image (G_i, 4) GT boxes appended to the ROIs (training only).
+        :return: HeadOutput with ROI class logits / box deltas; see :mod:`optastra.detection.keys` for ``extra``.
+        """
+        image_sizes = resolve_image_sizes(images, image_sizes)
+        detector_features, rpn_outputs = self._forward_detector(images, image_sizes)
+        roi_boxes, roi_features = self._forward_roi_features(detector_features, rpn_outputs, rois, gt_boxes)
         roi_output = self.roi_head(roi_features)
 
         extra = {
-            "rpn": rpn_outputs,
-            "roi_boxes": roi_boxes,
+            keys.RPN: rpn_outputs,
+            keys.ROI_BOXES: roi_boxes,
+            keys.IMAGE_SIZES: image_sizes,
         }
         return HeadOutput(logits=roi_output.logits, values=roi_output.values, extra=extra)
 
+
+# Pyramid levels multi-level ROIAlign pools from (each ROI from the level matching its size).
+FPN_ROI_STAGES = ("P2", "P3", "P4", "P5")
 
 faster_rcnn_configs = {
     "faster_rcnn_r18_fpn": FasterRCNNConfig(
         backbone=ComponentRef("resnet18"),
         neck=ComponentRef("fpn"),
-        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
+        region_extractor=ComponentRef("roi_align", {"stages": FPN_ROI_STAGES, "output_size": 7}),
     ),
     "faster_rcnn_r50_fpn": FasterRCNNConfig(
         backbone=ComponentRef("resnet50"),
         neck=ComponentRef("fpn"),
-        region_extractor=ComponentRef("roi_align", {"stage": "P2", "output_size": 7}),
+        region_extractor=ComponentRef("roi_align", {"stages": FPN_ROI_STAGES, "output_size": 7}),
     ),
     "faster_rcnn_r18_c5": FasterRCNNConfig(
         backbone=ComponentRef("resnet18"),

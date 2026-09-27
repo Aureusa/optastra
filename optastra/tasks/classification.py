@@ -3,17 +3,49 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .base import Task, Stage
+from .base import Task, Stage, TaskStepOutput
 from ..nn.features import HeadOutput
 
 
-__all__ = ["ClassificationTask"]
+__all__ = ["ClassificationTask", "ClassificationEvaluator"]
 
 
 @dataclass
 class ClassificationTaskConfig:
     label_smoothing: float = 0.0
     reduction: str = "mean"  # Options: 'mean', 'sum', 'none'
+
+
+class ClassificationEvaluator:
+    """Dataset-level accuracy from accumulated counts (correct / total) plus
+    the sample-weighted mean loss -- exact regardless of batch sizes."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.correct = 0
+        self.total = 0
+        self.loss_sum = 0.0
+        self.loss_count = 0
+
+    def process(self, output: TaskStepOutput, batch: Mapping[str, Any]) -> None:
+        labels = output.targets["labels"]
+        n = labels.shape[0]
+        self.correct += int((output.predictions == labels).sum().item())
+        self.total += n
+        if output.loss is not None:
+            # output.loss is a mean over the batch -> weight it by the batch size.
+            self.loss_sum += float(output.loss) * n
+            self.loss_count += n
+
+    def summarize(self) -> dict[str, float]:
+        results = {}
+        if self.total > 0:
+            results["accuracy"] = self.correct / self.total
+        if self.loss_count > 0:
+            results["total_loss"] = self.loss_sum / self.loss_count
+        return results
 
 
 class ClassificationTask(Task):
@@ -79,9 +111,14 @@ class ClassificationTask(Task):
     def decode_predictions(self, raw_preds: HeadOutput) -> Any:
         return torch.argmax(raw_preds.logits, dim=1)
 
+    def build_evaluator(self) -> ClassificationEvaluator:
+        return ClassificationEvaluator()
+
 
 classification_task_config = {
-    "classification_task": ClassificationTaskConfig(label_smoothing=0.1, reduction="mean")
+    # Same as the dataclass defaults (no label smoothing) -- pass
+    # label_smoothing=0.1 explicitly if you want it.
+    "classification_task": ClassificationTaskConfig(label_smoothing=0.0, reduction="mean")
 }
 
 @Task.register(config=classification_task_config["classification_task"])

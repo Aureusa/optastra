@@ -3,13 +3,17 @@ EfficientNet backbone, following "EfficientNet: Rethinking Model Scaling
 for Convolutional Neural Networks" (Tan & Le, 2019, arXiv:1905.11946).
 
 B0 defines a base architecture (stage widths/depths/kernel sizes/strides).
-B1-B7 are NOT separately designed -- they're B0 scaled by a single compound
-coefficient phi via:
+B1-B7 are NOT separately designed -- they're B0 scaled by a compound
+coefficient phi:
     depth_multiplier  = alpha ** phi
     width_multiplier  = beta ** phi
     resolution        = base_resolution * (gamma ** phi)
 with alpha=1.2, beta=1.1, gamma=1.15 (searched by the paper to satisfy
 alpha * beta^2 * gamma^2 ~= 2, so doubling phi ~doubles FLOPs).
+
+The released B1-B7 models use rounded, hand-picked multipliers rather than
+the exact powers, so the variant table below copies the official values
+(from the reference TF implementation / timm) instead of recomputing them.
 """
 from __future__ import annotations
 
@@ -20,28 +24,27 @@ import torch.nn as nn
 
 from .base import Backbone
 from ..nn.features import FeatureMaps, FeatureSpec
+from ..nn.layers import drop_path_rates
 from ..nn.blocks.convolution.mbconv import MBConvBlock
 from ..nn.blocks.convolution.conv_norm_act import ConvNormAct
 
 
+__all__ = ["EfficientNet", "EfficientNetConfig", "EFFICIENTNET_VARIANTS"]
 
-__all__ = ["EfficientNet"]
 
-
-# B0's base stage definitions: (expand_ratio, channels, num_blocks, stride, kernel_size)
-# stage index -> which C-stage it belongs to for FeatureSpec (C2-C5)
+# B0's base stage definitions. The stem already has stride 2, so the running
+# stride after each stage is: 2, 4, 8, 16, 16, 32, 32.
 _BASE_STAGES = [
     # expand, channels, depth, stride, kernel
-    (1,  16, 1, 1, 3),   # stage 1 -- stride 1, stays at stem's stride (part of C2)
-    (6,  24, 2, 2, 3),   # stage 2 -- C2 -> C3
-    (6,  40, 2, 2, 5),   # stage 3 -- C3 -> C4
-    (6,  80, 3, 2, 3),   # stage 4 -- C4 -> C5
-    (6, 112, 3, 1, 5),   # stage 5 -- stays at C5's stride
-    (6, 192, 4, 2, 5),   # stage 6 -- C5 -> C6 (EfficientNet has one more downsample than ResNet/ConvNeXt)
-    (6, 320, 1, 1, 3),   # stage 7 -- stays at C6's stride
+    (1,  16, 1, 1, 3),   # stage 1 -- stride 2  (C1)
+    (6,  24, 2, 2, 3),   # stage 2 -- stride 4  (C2)
+    (6,  40, 2, 2, 5),   # stage 3 -- stride 8  (C3)
+    (6,  80, 3, 2, 3),   # stage 4 -- stride 16
+    (6, 112, 3, 1, 5),   # stage 5 -- stride 16 (C4 = last stage at stride 16)
+    (6, 192, 4, 2, 5),   # stage 6 -- stride 32
+    (6, 320, 1, 1, 3),   # stage 7 -- stride 32 (C5 = last stage at stride 32)
 ]
 _BASE_STEM_CHANNELS = 32
-_BASE_RESOLUTION = 224
 
 
 def _round_channels(channels: float, width_mult: float, divisor: int = 8) -> int:
@@ -62,20 +65,22 @@ def _round_depth(depth: int, depth_mult: float) -> int:
 class EfficientNetConfig:
     width_mult: float = 1.0
     depth_mult: float = 1.0
-    resolution: int = 224     # informational only -- backbone itself is resolution-agnostic
     in_channels: int = 3
     se_ratio: float = 0.25
     drop_path_rate: float = 0.2
-    dropout: float = 0.2      # note: applies at the classification-head level, not inside the backbone
 
 
 class EfficientNet(Backbone):
     """Generic EfficientNet, parameterized by (width_mult, depth_mult) --
     every Bn variant is the SAME class with different multipliers, not a
-    separate architecture. Produces C2-C5 for FPN compatibility, same as
-    ResNet/ConvNeXt (the paper's stage 6 -> C6 downsample is folded into
-    C5's feature map so out_spec stays a 4-stage C2-C5 contract, matching
-    every other backbone in this framework)."""
+    separate architecture.
+
+    Produces C2-C5 for FPN compatibility, same as ResNet/ConvNeXt: each
+    C-level is the output of the LAST stage running at stride 2**k (the same
+    choice as timm's `features_only`), e.g. for B0: C2=24, C3=40, C4=112, C5=320
+    channels. The resolution-agnostic backbone works at any input size; the
+    paper's per-variant training resolution is listed in EFFICIENTNET_VARIANTS.
+    """
 
     def __init__(self, cfg: EfficientNetConfig):
         super().__init__()
@@ -88,29 +93,19 @@ class EfficientNet(Backbone):
         )
 
         total_blocks = sum(_round_depth(d, cfg.depth_mult) for _, _, d, _, _ in _BASE_STAGES)
-        dpr = [x.item() for x in torch.linspace(0, cfg.drop_path_rate, total_blocks)]
+        dpr = drop_path_rates(cfg.drop_path_rate, total_blocks)
 
         self.stages = nn.ModuleList()
-        # which base-stage index starts each C-level (after stem's stride-2):
-        # stem=stride2 (C1). stage1=stride1 (still C2 territory... but ResNet
-        # convention wants C2=stride4) -- stage2 is the first stride-2 -> C2 boundary.
-        # We treat: stem+stage1 => C2 (stride 4 total), stage2 => C3, stage3 => C4,
-        # stages4+5 => C5 (stage5 stride1, stays at C5), stage6+7 collapse into C5
-        # as well since this framework's FeatureSpec is a 4-stage contract.
-        c_stage_boundaries = {1: "C2", 2: "C3", 3: "C4", 4: "C5"}  # stage index -> new C-level starts here
+        self._stage_to_clevel = []     # C-level name of each stage's output, by its running stride
+        feature_map_channels = {}
+        feature_map_strides = {}
 
         in_ch = stem_channels
         block_idx = 0
-        feature_map_channels = {}
-        self._stage_to_clevel = []
-
-        current_clevel = "C2"
-        for stage_i, (expand, base_ch, base_depth, stride, kernel) in enumerate(_BASE_STAGES):
+        total_stride = 2               # the stem is stride 2
+        for expand, base_ch, base_depth, stride, kernel in _BASE_STAGES:
             out_ch = _round_channels(base_ch, cfg.width_mult)
             depth = _round_depth(base_depth, cfg.depth_mult)
-
-            if stage_i in c_stage_boundaries:
-                current_clevel = c_stage_boundaries[stage_i]
 
             blocks = []
             for j in range(depth):
@@ -125,13 +120,18 @@ class EfficientNet(Backbone):
                 ))
                 block_idx += 1
             self.stages.append(nn.Sequential(*blocks))
-            self._stage_to_clevel.append(current_clevel)
-            feature_map_channels[current_clevel] = out_ch   # last stage writing to this C-level wins
             in_ch = out_ch
+
+            total_stride *= stride
+            clevel = f"C{int(math.log2(total_stride))}"
+            self._stage_to_clevel.append(clevel)
+            if clevel != "C1":         # out_spec is the usual C2-C5 contract
+                feature_map_channels[clevel] = out_ch   # last stage at this stride wins
+                feature_map_strides[clevel] = total_stride
 
         self.out_spec = FeatureSpec(
             channels=feature_map_channels,
-            strides={"C2": 4, "C3": 8, "C4": 16, "C5": 32},
+            strides=feature_map_strides,
         )
 
     def forward(self, images: torch.Tensor) -> FeatureMaps:
@@ -139,61 +139,31 @@ class EfficientNet(Backbone):
         feature_maps = {}
         for stage, clevel in zip(self.stages, self._stage_to_clevel):
             x = stage(x)
-            feature_maps[clevel] = x   # later stages at the same clevel overwrite -- correct, we want the LAST one
+            if clevel in self.out_spec.channels:
+                feature_maps[clevel] = x   # later stages at the same stride overwrite -- we want the LAST one
         return FeatureMaps(feature_maps=feature_maps)
 
 
-# compound scaling coefficients from the paper (alpha, beta, gamma; alpha*beta^2*gamma^2 ~= 2)
-_ALPHA, _BETA, _GAMMA = 1.2, 1.1, 1.15
-
-def _scaled_config(phi: float, resolution: int, dropout: float) -> EfficientNetConfig:
-    return EfficientNetConfig(
-        depth_mult=_ALPHA ** phi,
-        width_mult=_BETA ** phi,
-        resolution=resolution,
-        dropout=dropout,
-    )
-
-efficientnet_configs = {
-    "efficientnet_b0": _scaled_config(phi=0, resolution=224, dropout=0.2),
-    "efficientnet_b1": _scaled_config(phi=0.5, resolution=240, dropout=0.2),
-    "efficientnet_b2": _scaled_config(phi=1, resolution=260, dropout=0.3),
-    "efficientnet_b3": _scaled_config(phi=2, resolution=300, dropout=0.3),
-    "efficientnet_b4": _scaled_config(phi=3, resolution=380, dropout=0.4),
-    "efficientnet_b5": _scaled_config(phi=4, resolution=456, dropout=0.4),
-    "efficientnet_b6": _scaled_config(phi=5, resolution=528, dropout=0.5),
-    "efficientnet_b7": _scaled_config(phi=6, resolution=600, dropout=0.5),
+# Official per-variant values: (width_mult, depth_mult, train resolution, head dropout).
+# Only the multipliers configure the backbone; resolution and dropout are listed as
+# the paper's recommended input size and classifier-head dropout for that variant.
+EFFICIENTNET_VARIANTS: dict[str, tuple[float, float, int, float]] = {
+    "efficientnet_b0": (1.0, 1.0, 224, 0.2),
+    "efficientnet_b1": (1.0, 1.1, 240, 0.2),
+    "efficientnet_b2": (1.1, 1.2, 260, 0.3),
+    "efficientnet_b3": (1.2, 1.4, 300, 0.3),
+    "efficientnet_b4": (1.4, 1.8, 380, 0.4),
+    "efficientnet_b5": (1.6, 2.2, 456, 0.4),
+    "efficientnet_b6": (1.8, 2.6, 528, 0.5),
+    "efficientnet_b7": (2.0, 3.1, 600, 0.5),
 }
 
+efficientnet_configs = {
+    name: EfficientNetConfig(width_mult=width, depth_mult=depth)
+    for name, (width, depth, _resolution, _dropout) in EFFICIENTNET_VARIANTS.items()
+}
 
-@Backbone.register(config=efficientnet_configs["efficientnet_b0"])
-def efficientnet_b0(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b1"])
-def efficientnet_b1(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b2"])
-def efficientnet_b2(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b3"])
-def efficientnet_b3(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b4"])
-def efficientnet_b4(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b5"])
-def efficientnet_b5(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b6"])
-def efficientnet_b6(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
-
-@Backbone.register(config=efficientnet_configs["efficientnet_b7"])
-def efficientnet_b7(cfg: EfficientNetConfig) -> EfficientNet:
-    return EfficientNet(cfg)
+# Every variant is the same class with a different config, so instead of one
+# 3-line factory function per variant we register the class itself under each name.
+for _name, _cfg in efficientnet_configs.items():
+    Backbone.register(EfficientNet, config=_cfg, name=_name)

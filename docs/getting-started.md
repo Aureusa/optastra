@@ -76,14 +76,20 @@ python examples/01_quickstart_classification.py
 
 A `Task` owns losses, metrics, and how a batch is split into inputs and
 targets; the `Trainer` only ever calls `task.run_step(...)` and never
-contains model-specific logic. See
-[`rand_augment_all_ops.py`](https://github.com/Aureusa/optastra) style
-scripts in downstream projects for a full training loop wiring
-`Trainer`, hooks (`default_hooks`, `EvalHook`, `SchedulerHook`, ...),
-and a `DataLoader` built with `build_dataloader`.
+contains model-specific logic. The Trainer owns runtime policy instead:
+`precision` (`"fp32"` default, `"bf16"`, `"fp16"`), `grad_accum_steps`
+and `clip_grad_norm`. See
+[`examples/05_full_training_pipeline.py`](../examples/05_full_training_pipeline.py)
+for a full training loop wiring `Trainer`, hooks (`default_hooks`,
+`EvalHook`, `SchedulerHook`, ...), and a `DataLoader` built with
+`build_dataloader`, and [Concepts](concepts.md#trainer-and-hooks) for how
+evaluation results reach storage and `metrics.jsonl`.
 
 ## Next steps
 
+- [Tutorials](tutorials.md): scenario walkthroughs (astronomy data, SSL
+  pretraining, detection, comparing backbones, custom tasks and hooks),
+  each backed by a runnable example.
 - [Concepts](concepts.md): how Registry -> Factory -> ComponentRef fit
   together, and the abstractions (`Backbone`, `Neck`, `Head`, `Task`,
   `Algorithm`, `Architecture`, `Trainer`).

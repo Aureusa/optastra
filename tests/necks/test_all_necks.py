@@ -11,12 +11,19 @@ def _fpn_in_spec() -> FeatureSpec:
     )
 
 
-def test_all_registered_necks_initialization():
-    necks = Neck.list_all()
+def _vit_like_in_spec() -> FeatureSpec:
+    # what a ViT exposes: a token view (embed_dim) and a single stride-16 map
+    return FeatureSpec(channels={"C4": 192}, strides={"C4": 16}, embed_dim=192, num_tokens=196)
 
-    for neck_name in necks:
-        model = Neck.create(neck_name, _fpn_in_spec())
-        assert model is not None
+
+@pytest.mark.parametrize("neck_name", Neck.list_all())
+def test_all_registered_necks_initialization(neck_name):
+    if neck_name == "token_pool":
+        with pytest.raises(ValueError, match="embed_dim"):
+            Neck.create(neck_name, _fpn_in_spec())   # CNN specs carry no tokens
+    else:
+        assert Neck.create(neck_name, _fpn_in_spec()) is not None
+    assert Neck.create(neck_name, _vit_like_in_spec()) is not None
 
 
 def test_failure_on_unknown_neck():

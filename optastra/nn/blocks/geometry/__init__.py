@@ -3,6 +3,7 @@ from .boxes import (
     batched_nms,
     clip_boxes_to_image,
     encode_boxes,
+    flatten_anchor_predictions,
     generate_anchors,
     pairwise_iou,
     remove_small_boxes,
@@ -10,6 +11,7 @@ from .boxes import (
 
 __all__ = [
     "generate_anchors",
+    "flatten_anchor_predictions",
     "encode_boxes",
     "apply_deltas_to_anchors",
     "pairwise_iou",

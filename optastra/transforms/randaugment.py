@@ -5,195 +5,50 @@ https://arxiv.org/abs/1909.13719
 The original implementation is available at:
 https://www.github.com/tensorflow/tpu/tree/master/models/official/efficientnet
 
-
-TODO: Split _OPS into categories: _PHOTOMETRIC_OPS and _GEOMETRIC_OPS,
-and allow users to select which categories to use. This is usefull as if you
-rotate the image and do not transform the boxes, the boxes will be misaligned with the image.
-Photometric ops do not have this problem, so they are safe to use with detection tasks.
+Op implementations live in `ops.py`. The default op set is photometric-only;
+`rand_augment_all_ops` adds the geometric ops, which move boxes/masks along
+with the image.
 """
-from dataclasses import dataclass, field
-import math
-import random
+from __future__ import annotations
+from dataclasses import dataclass
 
-import torch
-import torchvision.transforms.functional as F
-
+from . import functional as FN
+from . import rng
 from .base import Transform
-from .functional import (
-    safe_posterize,
-    safe_autocontrast,
-    safe_equalize,
-    safe_solarize
-)
+from .ops import ALL_OP_NAMES, PHOTOMETRIC_OP_NAMES, apply_op, check_op_names
 
 
 __all__ = ["RandAugment"]
-
-
-def _identity(img, m):
-    return img
-
-
-def _rotate(img, m):
-    degrees = random.choice([-1, 1]) * (m / 10.0) * 30
-    return F.rotate(img, degrees)
-
-
-def _posterize(img, m):
-    bits = int(round(8 - (m / 10.0) * 4))
-    return safe_posterize(img, bits)
-
-
-def _autocontrast(img, m):
-    return safe_autocontrast(img)
-
-
-def _equalize(img, m):
-    return safe_equalize(img)
-
-
-def _solarize(img, m):
-    threshold = 1.0 - (m / 10.0)
-    return safe_solarize(img, threshold)
-
-
-def _color(img, m):
-    factor = 1 + random.choice([-1, 1]) * (m / 10.0) * 0.9
-    return F.adjust_saturation(img, factor)
-
-
-def _contrast(img, m):
-    factor = 1 + random.choice([-1, 1]) * (m / 10.0) * 0.9
-    return F.adjust_contrast(img, factor)
-
-
-def _brightness(img, m):
-    factor = 1 + random.choice([-1, 1]) * (m / 10.0) * 0.9
-    return F.adjust_brightness(img, factor)
-
-
-def _sharpness(img, m):
-    factor = 1 + random.choice([-1, 1]) * (m / 10.0) * 0.9
-    return F.adjust_sharpness(img, factor)
-
-
-def _shear_x(img, m):
-    # RandAugment shear max ~= 0.3
-    # torchvision expects degrees
-    degrees = math.degrees(math.atan(0.3 * (m / 10.0)))
-    degrees *= random.choice([-1, 1])
-
-    return F.affine(
-        img,
-        angle=0,
-        translate=[0, 0],
-        scale=1.0,
-        shear=[degrees, 0],
-    )
-
-
-def _shear_y(img, m):
-    degrees = math.degrees(math.atan(0.3 * (m / 10.0)))
-    degrees *= random.choice([-1, 1])
-
-    return F.affine(
-        img,
-        angle=0,
-        translate=[0, 0],
-        scale=1.0,
-        shear=[0, degrees],
-    )
-
-
-def _translate_x(img, m):
-    max_shift = img.shape[-1] * 0.3
-    shift = int(random.choice([-1, 1]) * (m / 10.0) * max_shift)
-
-    return F.affine(
-        img,
-        angle=0,
-        translate=[shift, 0],
-        scale=1.0,
-        shear=[0, 0],
-    )
-
-
-def _translate_y(img, m):
-    max_shift = img.shape[-2] * 0.3
-    shift = int(random.choice([-1, 1]) * (m / 10.0) * max_shift)
-
-    return F.affine(
-        img,
-        angle=0,
-        translate=[0, shift],
-        scale=1.0,
-        shear=[0, 0],
-    )
-
-
-_PHOTOMETRIC_OPS = {"Identity", "AutoContrast", "Equalize", "Posterize", "Solarize",
-                     "Color", "Contrast", "Brightness", "Sharpness"}
-_GEOMETRIC_OPS = {"Rotate", "ShearX", "ShearY", "TranslateX", "TranslateY"}
-
-
-_OPS = {
-    "Identity": _identity,
-    "AutoContrast": _autocontrast,
-    "Equalize": _equalize,
-
-    "Rotate": _rotate,
-    "Posterize": _posterize,
-    "Solarize": _solarize,
-
-    "Color": _color,
-    "Contrast": _contrast,
-    "Brightness": _brightness,
-    "Sharpness": _sharpness,
-
-    "ShearX": _shear_x,
-    "ShearY": _shear_y,
-    "TranslateX": _translate_x,
-    "TranslateY": _translate_y,
-}
 
 
 @dataclass
 class RandAugmentConfig:
     num_ops: int = 2
     magnitude: int = 9   # standard RandAugment N,M notation
-
-    ops: list[str] = field(
-        default_factory=lambda: list(_PHOTOMETRIC_OPS)
-    )
+    ops: tuple[str, ...] = PHOTOMETRIC_OP_NAMES
+    value_range: tuple[float, float] | None = None   # None -> inferred per image, see functional.py
 
 
 class RandAugment(Transform):
+    """Apply `num_ops` distinct ops, chosen uniformly from `ops`, at a fixed `magnitude`.
+    Works on float images with any channel count and value range; integer
+    images are converted with `functional.to_float_image` first."""
 
-    def __init__(self, cfg=None):
-        self.cfg = cfg or RandAugmentConfig()
+    def __init__(self, cfg: RandAugmentConfig = RandAugmentConfig()):
+        check_op_names(cfg.ops)
+        self.cfg = cfg
 
     def __call__(self, sample):
-
-        chosen = random.sample(
-            self.cfg.ops,
-            k=self.cfg.num_ops,
-        )
-
-        for op_name in chosen:
-            op = _OPS[op_name]
-            sample.image = op(
-                sample.image,
-                self.cfg.magnitude,
-            )
-
+        sample.image = FN.to_float_image(sample.image)
+        value_range = FN.infer_value_range(sample.image, self.cfg.value_range)
+        for op_name in rng.sample(self.cfg.ops, k=self.cfg.num_ops):
+            sample = apply_op(sample, op_name, self.cfg.magnitude, value_range)
         return sample
 
 
 @Transform.register(config=RandAugmentConfig())
-def rand_augment(cfg):
-    return RandAugment(cfg)
+def rand_augment(cfg): return RandAugment(cfg)
 
-@Transform.register(config=RandAugmentConfig())
-def rand_augment_all_ops(cfg):
-    cfg.ops = list(_OPS.keys())
-    return RandAugment(cfg)
+
+@Transform.register(config=RandAugmentConfig(ops=ALL_OP_NAMES))
+def rand_augment_all_ops(cfg): return RandAugment(cfg)

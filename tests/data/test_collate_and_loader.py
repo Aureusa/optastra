@@ -75,3 +75,58 @@ def test_sample_defaults_are_stable():
     assert sample.views is None
     assert sample.target == {}
     assert sample.meta == {}
+
+
+def test_ragged_collate_pads_variable_size_images_and_records_their_sizes():
+    first = torch.arange(3 * 5 * 7, dtype=torch.float32).view(3, 5, 7) + 1
+    second = torch.arange(3 * 8 * 4, dtype=torch.float32).view(3, 8, 4) + 1
+    samples = [
+        Sample(image=first, target={"boxes": torch.zeros(1, 4)}),
+        Sample(image=second, target={"boxes": torch.zeros(2, 4)}),
+    ]
+
+    batch = CollateFn._registry.get_entrypoint("ragged")(samples)
+
+    assert batch["inputs"].shape == (2, 3, 8, 7)
+    assert batch["image_sizes"] == [(5, 7), (8, 4)]
+    # Content is placed top-left (so box coordinates stay valid), the rest is padding.
+    assert torch.equal(batch["inputs"][0, :, :5, :7], first)
+    assert torch.equal(batch["inputs"][1, :, :8, :4], second)
+    assert batch["inputs"][0, :, 5:, :].abs().sum() == 0
+    assert batch["inputs"][1, :, :, 4:].abs().sum() == 0
+    assert "rois" not in batch
+
+
+def test_ragged_collate_rounds_padded_size_up_to_size_divisibility():
+    samples = [Sample(image=torch.ones(1, 33, 20), target={}), Sample(image=torch.ones(1, 10, 64), target={})]
+
+    collate = CollateFn.create("ragged", size_divisibility=32)
+    batch = collate(samples)
+
+    assert batch["inputs"].shape == (2, 1, 64, 64)
+    assert batch["image_sizes"] == [(33, 20), (10, 64)]
+
+
+def test_build_dataloader_binds_collate_kwargs():
+    dataset = [Sample(image=torch.ones(3, 5, 5), target={"boxes": torch.zeros(0, 4)})]
+    task = SimpleNamespace(collate="ragged")
+
+    batch = next(iter(build_dataloader(dataset, task=task, batch_size=1, collate_kwargs={"size_divisibility": 16})))
+
+    assert batch["inputs"].shape == (1, 3, 16, 16)
+    assert batch["image_sizes"] == [(5, 5)]
+
+
+def test_ragged_collate_batches_per_sample_proposals_as_rois():
+    samples = [
+        Sample(image=torch.ones(3, 4, 4), target={"proposals": torch.tensor([[0.0, 0.0, 2.0, 2.0]])}),
+        Sample(image=torch.ones(3, 4, 4), target={"proposals": torch.tensor([[1.0, 1.0, 3.0, 3.0], [0.0, 1.0, 2.0, 3.0]])}),
+    ]
+
+    batch = CollateFn._registry.get_entrypoint("ragged")(samples)
+
+    assert batch["rois"].tolist() == [
+        [0.0, 0.0, 0.0, 2.0, 2.0],
+        [1.0, 1.0, 1.0, 3.0, 3.0],
+        [1.0, 0.0, 1.0, 2.0, 3.0],
+    ]

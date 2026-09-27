@@ -6,6 +6,9 @@ from ..base_criterion import DetectionCriterion
 from ...nn.features import HeadOutput
 
 
+__all__ = ["DETRCriterionStub", "DETRCriterionStubConfig"]
+
+
 @dataclass
 class DETRCriterionStubConfig:
     num_classes: int = 80

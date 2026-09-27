@@ -37,3 +37,20 @@ def test_alexnet_create_override_does_not_mutate_default_config():
     _ = Backbone.create("alexnet", in_channels=1)
 
     assert Backbone.get_default_config("alexnet").in_channels == 3
+
+
+def test_alexnet_default_is_faithful_conv_relu_lrn_without_batchnorm():
+    model = Backbone.create("alexnet")
+    assert not any(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules())
+    first_conv = model.features[0].conv
+    assert first_conv.bias is not None      # no norm follows -> the conv keeps its bias
+
+    from optastra.nn.blocks.convolution import LocalResponseNorm
+    assert sum(isinstance(m, LocalResponseNorm) for m in model.modules()) == 2
+
+
+def test_alexnet_can_opt_into_batchnorm_without_lrn():
+    model = Backbone.create("alexnet", norm="batchnorm", lrn=False)
+    assert sum(isinstance(m, torch.nn.BatchNorm2d) for m in model.modules()) == 5
+    from optastra.nn.blocks.convolution import LocalResponseNorm
+    assert not any(isinstance(m, LocalResponseNorm) for m in model.modules())
