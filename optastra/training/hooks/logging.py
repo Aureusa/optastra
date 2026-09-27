@@ -4,6 +4,9 @@ from ..state import TrainerState
 
 
 class ConsoleLoggerHook(Hook):
+    """Minimal console logger: smoothed train loss every `log_every` iters and
+    the per-batch eval scalars every `log_every` eval batches."""
+
     def __init__(self, log_every: int = 20):
         self.log_every = log_every
         self.logger = logging.getLogger("optastra.train")
@@ -13,22 +16,17 @@ class ConsoleLoggerHook(Hook):
     def after_step(self, state: TrainerState) -> None:
         if state.iter % self.log_every != 0:
             return
-        loss = state.storage.smoothed("loss")
-        self.logger.info(f"iter {state.iter}/{state.max_iter}  loss={loss:.4f}")
+        loss = state.storage.smoothed("total_loss")
+        self.logger.info(f"iter {state.iter}/{state.max_iter}  total_loss={loss:.4f}")
 
     def after_eval_step(self, state: TrainerState) -> None:
-        max_eval_iter = state.storage.max_eval_iter
-        if max_eval_iter == 0:
-            self.logger.warning("max_eval_iter is 0, cannot log eval metrics.")
+        storage = state.storage
+        if storage.eval_iter % self.log_every != 0:
             return
-        if state.storage.eval_iter % self.log_every != 0:
-            return
-        
-        eval_metrics = state.storage.latest_fresh(max_age=0)
-        eval_metrics = {k: v for k, v in eval_metrics.items() if k.startswith("val_")}
 
-        # Get counter for eval metrics, which is the eval_iter
-        eval_iter = state.storage.eval_iter
+        eval_metrics = storage.latest_fresh(max_age=0, axis="eval_iter")
+        eval_metrics = {k: v for k, v in eval_metrics.items() if k not in ("eval_time", "eval_data_time")}
+        total = storage.max_eval_iter or "?"
         if eval_metrics:
             eval_str = "  ".join(f"{k}={v:.4f}" for k, v in sorted(eval_metrics.items()))
-            self.logger.info(f"[eval @ iter {state.iter}] iter {eval_iter}/{max_eval_iter}  {eval_str}")
+            self.logger.info(f"[eval @ iter {state.iter}] batch {storage.eval_iter + 1}/{total}  {eval_str}")

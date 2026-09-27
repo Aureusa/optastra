@@ -24,9 +24,11 @@ def default_hooks(
         CommonMetricPrinterHook(log_every=log_every),
         JSONWriterHook(output_dir=f"{output_dir}/logs", log_every=log_every)
     ]
+    # Position doesn't matter: Trainer sorts hooks by Hook.priority
+    # (ResumeHook=0 runs first, checkpoint hooks=100 run last).
     if best_metric is not None:
-        default_hooks_list.insert(1, BestCheckpointHook(checkpointer, metric=best_metric, mode=best_mode))
+        default_hooks_list.append(BestCheckpointHook(checkpointer, metric=best_metric, mode=best_mode))
     if resume:
-        default_hooks_list.insert(0, ResumeHook(checkpointer, checkpoint_name=checkpoint_name))
+        default_hooks_list.append(ResumeHook(checkpointer, checkpoint_name=checkpoint_name))
 
     return default_hooks_list

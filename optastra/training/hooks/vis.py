@@ -1,11 +1,13 @@
-import torch, os
+import os
 from .base import Hook
 from ..state import TrainerState
 
-from ...visualization.visualizer import Visualizer as Vis
-
 
 class VisualizerHook(Hook):
+    """Saves pre-/post-transform views of the first image of the batch.
+    matplotlib is imported lazily on first use, so `import optastra` never
+    pulls it in."""
+
     def __init__(self, output_dir: str, visualize_every: int = 500):
         self.output_dir = output_dir
         self.visualize_every = visualize_every
@@ -14,7 +16,8 @@ class VisualizerHook(Hook):
 
     def before_step(self, state: TrainerState) -> None:
         if self.vis is None:
-            self.vis = Vis(nrows=1, ncols=2, figsize=(10, 5))  # Adjust nrows and ncols as needed
+            from ...visualization.visualizer import Visualizer  # lazy: imports matplotlib
+            self.vis = Visualizer(nrows=1, ncols=2, figsize=(10, 5))  # Adjust nrows and ncols as needed
         state.current_batch = state.current_batch  # Ensure current_batch is set before visualization
 
         # Take the first image from the batch for visualization

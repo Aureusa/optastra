@@ -19,8 +19,8 @@ class CommonMetricPrinterHook(Hook):
     }
     """
 
-    _SKIP = {"data_time", "time"}        # shown explicitly, not in the generic tail
-    _SMOOTH = {"total_loss", "time", "data_time"}
+    _SKIP = {"data_time", "iter_time"}        # shown explicitly, not in the generic tail
+    _SMOOTH = {"total_loss", "iter_time", "data_time"}
 
     def __init__(self, log_every: int = 20):
         self.log_every = log_every
@@ -35,26 +35,28 @@ class CommonMetricPrinterHook(Hook):
 
         # ETA from smoothed step time * remaining iters
         eta_str = "N/A"
-        if "iter_time" in s._history:
+        if s.has("iter_time"):
             avg_time = s.smoothed("iter_time")
             remaining = state.max_iter - state.iter
             eta_str = str(datetime.timedelta(seconds=int(avg_time * remaining)))
 
-        # generic tail: every loss-like scalar currently tracked, in one pass,
-        # no hardcoded names -- new loss components show up automatically
+        # generic tail: every train scalar currently tracked, in one pass,
+        # no hardcoded names -- new loss components show up automatically.
+        # val_* summaries are printed by after_eval instead.
         loss_names = [
-            k for k in s._history
+            k for k in s.keys()
             if k not in self._SKIP
             and k not in ("lr",)
+            and k not in state.eval_results
         ]
         losses_str = "  ".join(
             f"{k}: {s.smoothed(k) if k in self._SMOOTH else s.latest().get(k, float('nan')):.4g}"
             for k in sorted(loss_names)
         )
 
-        time_str = f"avg_iter_time: {s.smoothed('iter_time'):.4f} s" if "iter_time" in s._history else ""
-        data_str = f"avg_data_time: {s.smoothed('data_time'):.4f} s" if "data_time" in s._history else ""
-        lr_str = f"lr: {s.latest().get('lr', float('nan')):.2e}" if "lr" in s._history else ""
+        time_str = f"avg_iter_time: {s.smoothed('iter_time'):.4f} s" if s.has("iter_time") else ""
+        data_str = f"avg_data_time: {s.smoothed('data_time'):.4f} s" if s.has("data_time") else ""
+        lr_str = f"lr: {s.latest().get('lr', float('nan')):.2e}" if s.has("lr") else ""
 
         mem_str = ""
         if torch.cuda.is_available():
@@ -65,22 +67,17 @@ class CommonMetricPrinterHook(Hook):
 
     def after_eval_step(self, state: TrainerState) -> None:
         s = state.storage
-        if s.max_eval_iter == 0:
-            return
         if s.eval_iter % self.log_every != 0:
             return
 
-        # Use only metrics updated on this eval iteration to avoid mixing train-axis values.
+        # Per-batch eval scalars live on their own storage axis.
         fresh = s.latest_fresh(max_age=0, axis="eval_iter")
-        skip_keys = self._SKIP | {"eval_data_time", "eval_time"}
+        skip_keys = {"eval_data_time", "eval_time"}
 
-        time_key = "eval_time" if "eval_time" in fresh else "time"
-        data_time_key = "eval_data_time" if "eval_data_time" in fresh else "data_time"
-
-        # ETA from smoothed eval step time * remaining eval batches.
+        # ETA from smoothed eval step time * remaining eval batches (unknown without len()).
         eta_str = "N/A"
-        if time_key in fresh:
-            avg_time = s.smoothed(time_key)
+        if "eval_time" in fresh and s.max_eval_iter > 0:
+            avg_time = s.smoothed("eval_time", axis="eval_iter")
             remaining = max(s.max_eval_iter - (s.eval_iter + 1), 0)
             eta_str = str(datetime.timedelta(seconds=int(avg_time * remaining)))
 
@@ -93,14 +90,10 @@ class CommonMetricPrinterHook(Hook):
             and "loss" not in k.lower()
             and "_dm" not in k.lower()  # exclude dmlab metrics
         ]
-        metrics_str = "  ".join(
-            f"{k}: {s.smoothed(k) if k in self._SMOOTH else fresh.get(k, float('nan')):.4g}"
-            for k in sorted(metric_names)
-        )
+        metrics_str = "  ".join(f"{k}: {fresh[k]:.4g}" for k in sorted(metric_names))
 
-        time_str = f"avg_iter_time: {s.smoothed(time_key):.4f} s" if time_key in s._history else ""
-        data_str = f"avg_data_time: {s.smoothed(data_time_key):.4f} s" if data_time_key in s._history else ""
-        lr_str = f"lr: {fresh.get('lr', float('nan')):.4g}" if "lr" in fresh else ""
+        time_str = f"avg_iter_time: {s.smoothed('eval_time', axis='eval_iter'):.4f} s" if "eval_time" in fresh else ""
+        data_str = f"avg_data_time: {s.smoothed('eval_data_time', axis='eval_iter'):.4f} s" if "eval_data_time" in fresh else ""
 
         mem_str = ""
         if torch.cuda.is_available():
@@ -109,28 +102,19 @@ class CommonMetricPrinterHook(Hook):
         parts = [
             f"[eval @ iter {state.iter}]",
             f"eta: {eta_str}",
-            f"eval_iter: {s.eval_iter + 1}/{s.max_eval_iter}",
+            f"eval_iter: {s.eval_iter + 1}/{s.max_eval_iter or '?'}",
             metrics_str,
             time_str,
             data_str,
-            lr_str,
             mem_str,
         ]
         self.logger.info("  ".join(p for p in parts if p))
 
     def after_eval(self, state: TrainerState) -> None:
-        s = state.storage
-        if s.max_eval_iter == 0:
-            return
-
-        # Log final eval metrics after evaluation is complete.
-        # The avg metrics are here self.storage.put_scalars(axis="iter", **{f"val_{k}": v for k, v in averaged.items()})
-        latest = s.latest()
-
-        # Get only the val_ prefixed metrics for logging.
-        val_metrics = {k: v for k, v in latest.items() if k.startswith("val_")}
+        # Dataset-level results of the eval that just finished (written by Trainer.evaluate).
+        val_metrics = state.eval_results
         if not val_metrics:
-            self.logger.info(f"[eval @ iter {state.iter}] No val_ metrics found in storage.")
+            self.logger.info(f"[eval @ iter {state.iter}] No eval metrics were produced.")
             return
 
         metrics_str = "  ".join(f"{k}: {v:.4g}" for k, v in sorted(val_metrics.items()))

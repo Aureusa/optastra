@@ -8,39 +8,41 @@ from ..state import TrainerState
 
 class EvalHook(Hook):
     """
-    Periodically runs a no-arg eval function and pushes results into
-    EventStorage under a prefix. Doesn't know what's being evaluated --
-    just calls eval_fn() and logs whatever dict it returns.
+    Periodically runs a no-arg eval function, typically
+    ``lambda: trainer.evaluate(val_loader)``.
+
+    Storage is Trainer.evaluate()'s job, not this hook's: evaluate() writes
+    the dataset-level summaries (``val_accuracy``, ``val_total_loss``, ...)
+    to storage once, keeps per-batch eval scalars in a separate namespace
+    (so they never pollute the training smoothing windows), and runs the
+    ``*_eval`` hooks. This hook only decides *when* to evaluate and logs the
+    returned dict. A custom ``eval_fn`` that doesn't go through
+    Trainer.evaluate() therefore writes nothing to storage.
     """
     def __init__(
         self,
         eval_period: int,
         eval_fn: Callable[[], dict[str, float]],
-        prefix: str = "val",
+        prefix: str = "val",           # only used in the log line
         eval_after_train: bool = True,
     ):
         self.eval_period = eval_period
         self.eval_fn = eval_fn
         self.prefix = prefix
         self.eval_after_train = eval_after_train
+        self._last_eval_iter: int | None = None
         self.logger = logging.getLogger("optastra.eval")
         self.logger.setLevel(logging.INFO)
         self.logger.propagate = True
 
     def _do_eval(self, state: TrainerState) -> None:
-        storage_snapshot = state.storage.snapshot()
-        last_output = state.last_output
-        try:
-            metrics = self.eval_fn()
-            state.storage.put_scalars(**{f"{self.prefix}_{k}": v for k, v in metrics.items()})
-            if metrics:
-                metrics_str = "  ".join(f"{self.prefix}_{k}={v:.4f}" for k, v in metrics.items())
-                self.logger.info(f"eval at iter {state.iter}/{state.max_iter}  {metrics_str}")
-            else:
-                self.logger.info(f"eval at iter {state.iter}/{state.max_iter} produced no metrics")
-        finally:
-            state.storage.restore(storage_snapshot)
-            state.last_output = last_output
+        self._last_eval_iter = state.iter
+        metrics = self.eval_fn()
+        if metrics:
+            metrics_str = "  ".join(f"{self.prefix}_{k}={v:.4f}" for k, v in metrics.items())
+            self.logger.info(f"eval at iter {state.iter}/{state.max_iter}  {metrics_str}")
+        else:
+            self.logger.info(f"eval at iter {state.iter}/{state.max_iter} produced no metrics")
 
     def after_step(self, state: TrainerState) -> None:
         # Fire at iter 200, 400, ... for eval_period=200 and skip iter 0.
@@ -49,6 +51,6 @@ class EvalHook(Hook):
             self._do_eval(state)
 
     def after_train(self, state: TrainerState) -> None:
-        if self.eval_after_train:
+        # Skip if the periodic eval already ran on these exact weights.
+        if self.eval_after_train and self._last_eval_iter != state.iter:
             self._do_eval(state)
-            
