@@ -5,6 +5,7 @@ from typing import Any, Mapping, Literal, Protocol
 import torch
 
 from ..nn.features import HeadOutput
+from ..core.distributed import sum_across_processes
 from ..core.factory import Factory
 from ..core.registry import FamilyRegistry
 
@@ -37,10 +38,19 @@ class Evaluator(Protocol):
 
     Keeping this separate from `compute_metrics` matters for any metric that
     isn't a per-batch mean (accuracy over unequal batches, mAP, ...).
+
+    Multi-process (DDP) evaluation: each process evaluates its own shard, then
+    `Trainer.evaluate()` calls `sync()` before `summarize()`. `sync()` must
+    combine the accumulators of all processes (in place), typically by
+    summing counts and running sums with
+    `optastra.core.distributed.sum_across_processes` -- which is why
+    evaluators accumulate sums rather than per-batch results. Without
+    `sync()`, an evaluator only works in single-process runs.
     """
 
     def reset(self) -> None: ...
     def process(self, output: TaskStepOutput, batch: Mapping[str, Any]) -> None: ...
+    def sync(self) -> None: ...
     def summarize(self) -> dict[str, float]: ...
 
 
@@ -80,6 +90,14 @@ class MeanMetricEvaluator:
         for k, v in values.items():
             self._sums[k] += float(v) * n
             self._counts[k] += n
+
+    def sync(self) -> None:
+        """Add up every process's sums and counts (multi-process evaluation)."""
+        total = sum_across_processes(
+            {f"sum/{k}": v for k, v in self._sums.items()} | {f"count/{k}": v for k, v in self._counts.items()}
+        )
+        self._sums = defaultdict(float, {k[4:]: v for k, v in total.items() if k.startswith("sum/")})
+        self._counts = defaultdict(int, {k[6:]: v for k, v in total.items() if k.startswith("count/")})
 
     def summarize(self) -> dict[str, float]:
         return {k: self._sums[k] / self._counts[k] for k in self._sums if self._counts[k] > 0}

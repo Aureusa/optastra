@@ -61,3 +61,29 @@ def test_scheduler_create_rejects_unknown_name():
         assert False, "Expected ValueError for missing scheduler"
     except ValueError as e:
         assert "not registered" in str(e)
+
+
+def test_warmup_cosine_checkpoint_loads_with_weights_only(tmp_path):
+    # torch.load defaults to weights_only=True (PyTorch >= 2.6): the scheduler
+    # state inside a checkpoint must be plain data, or resuming a run and
+    # export_backbone both fail.
+    from optastra import Optimizer, Task, Trainer
+    from optastra.training import Checkpointer
+    from optastra.training.hooks import SchedulerHook
+
+    model = torch.nn.Linear(2, 2)
+    opt = Optimizer.create("sgd", model)
+    sched = Scheduler.create("warmup_cosine", opt, warmup_steps=2, total_steps=10)
+    for _ in range(3):
+        opt.step()
+        sched.step()
+    trainer = Trainer(model, Task.create("regression_task"), opt, hooks=[SchedulerHook(sched)], device="cpu")
+    path = Checkpointer(str(tmp_path)).save(trainer.state, "ckpt_3.pt")
+    torch.load(path, weights_only=True)                      # must not raise
+
+    fresh_opt = Optimizer.create("sgd", model)
+    fresh = Scheduler.create("warmup_cosine", fresh_opt, warmup_steps=2, total_steps=10)
+    fresh_trainer = Trainer(model, Task.create("regression_task"), fresh_opt, hooks=[SchedulerHook(fresh)], device="cpu")
+    Checkpointer(str(tmp_path)).load(fresh_trainer.state, path)
+    assert fresh.last_epoch == 3 and fresh.get_last_lr() == sched.get_last_lr()
+    assert fresh.cfg.total_steps == 10                       # config still comes from the constructor

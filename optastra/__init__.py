@@ -43,6 +43,8 @@ from .transforms import Transform, BatchTransform
 from .training import Trainer
 from .data import Sample, build_dataloader
 from .data.collate import CollateFn
+from .core import distributed
+from .core.distributed import init_distributed, is_main_process
 
 __all__ = [
     "bootstrap",
@@ -75,4 +77,7 @@ __all__ = [
     "Sample",
     "build_dataloader",
     "CollateFn",
+    "distributed",
+    "init_distributed",
+    "is_main_process",
 ]

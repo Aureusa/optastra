@@ -11,6 +11,7 @@ class CheckpointHook(Hook):
     Saves a resumable checkpoint every `save_every` iterations.
     File naming and format are owned by the Checkpointer.
     """
+    main_process_only = True  # writes files / prints: rank 0 only in multi-process runs
     priority = 100  # after SchedulerHook/EvalHook/etc., so their state for this iter is saved
 
     def __init__(self, checkpointer: Checkpointer | str, save_every: int = 500):
@@ -30,6 +31,7 @@ class BestCheckpointHook(Hook):
     model for; pass the same `tracker` as EarlyStoppingHook to have both
     agree on what "best" means.
     """
+    main_process_only = True  # writes files / prints: rank 0 only in multi-process runs
     priority = 100  # after EarlyStoppingHook etc. have updated for this eval
 
     def __init__(

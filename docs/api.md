@@ -8,6 +8,7 @@ Auto-generated from docstrings via [mkdocstrings](https://mkdocstrings.github.io
 ::: optastra.core.build
 ::: optastra.core.component_ref
 ::: optastra.core.describe
+::: optastra.core.distributed
 ::: optastra.core.experiment
 ::: optastra.core.factory
 ::: optastra.core.registry
@@ -92,6 +93,7 @@ Auto-generated from docstrings via [mkdocstrings](https://mkdocstrings.github.io
 ::: optastra.optim.base
 ::: optastra.optim.adam
 ::: optastra.optim.adamw
+::: optastra.optim.lars
 ::: optastra.optim.sgd
 ::: optastra.optim.param_groups
 ::: optastra.optim.scheduler_base
@@ -102,6 +104,7 @@ Auto-generated from docstrings via [mkdocstrings](https://mkdocstrings.github.io
 ::: optastra.data.sample
 ::: optastra.data.collate
 ::: optastra.data.loader
+::: optastra.data.sampler
 ::: optastra.data.coco
 
 ## Training

@@ -39,13 +39,14 @@ Most of this README describes the design and its goals. Implemented today:
   data (e.g. multi-band survey images); randomness is seedable.
 - **Training:** a hook-driven `Trainer` with fp32 / bf16 / fp16 precision,
   gradient accumulation and clipping, sample-weighted evaluation, and
-  resumable checkpoints.
+  resumable checkpoints; multi-GPU data-parallel training (DDP) by launching
+  the same script with `torchrun --nproc_per_node=N`.
 
 Items marked *(planned)* below are not implemented yet -- e.g. Swin,
 segmentation tasks, MAE / DINOv2 / CLIP, and a standalone
 Loss family (`optastra/losses/` is an empty placeholder). Also not
 implemented yet: data / trainer / hook settings in `ExperimentConfig`, and
-multi-GPU (DDP) training.
+multi-node training beyond what `torchrun` provides out of the box (untested).
 
 ## Motivation
 

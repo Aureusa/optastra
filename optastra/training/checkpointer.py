@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 from .state import TrainerState
+from ..core.distributed import is_main_process
 
 
 __all__ = ["Checkpointer"]
@@ -63,14 +64,19 @@ class Checkpointer:
         return self.path(max(found)[1]) if found else None
 
     def save(self, state: TrainerState, name: str, extra: dict[str, Any] | None = None) -> str:
-        os.makedirs(self.output_dir, exist_ok=True)
         path = self.path(name)
+        if not is_main_process():
+            # Multi-process runs: the processes hold identical model/optimizer
+            # state, so rank 0 alone writes (concurrent writers would race).
+            return path
+        os.makedirs(self.output_dir, exist_ok=True)
         tmp_path = f"{path}.tmp"
         torch.save({
             "model": self.model_state_dict(state.model),
             "optimizer": state.optimizer.state_dict(),
             "iter": state.iter,
             "epoch": state.epoch,
+            "epoch_step": state.epoch_step,
             "hooks": [
                 {"name": type(hook).__name__, "state": hook.state_dict() if hasattr(hook, "state_dict") else {}}
                 for hook in state.hooks
@@ -91,6 +97,7 @@ class Checkpointer:
         # Checkpoints are written after step `iter` completed -- continue with the next one.
         state.start_iter = checkpoint["iter"] + 1
         state.epoch = checkpoint.get("epoch", state.epoch)
+        state.epoch_step = checkpoint.get("epoch_step", 0)
         self._restore_hooks(state.hooks, checkpoint.get("hooks", []))
         if "rng" in checkpoint:
             self._set_rng_state(checkpoint["rng"])

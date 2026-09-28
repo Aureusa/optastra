@@ -16,6 +16,13 @@ class Hook(ABC):
     # everyone else's updates for this step (checkpointing).
     priority: int = 50
 
+    # Multi-process (DDP) runs: True = run only on the main process (rank 0).
+    # Set it on hooks with side effects that must happen once -- writing
+    # checkpoints, log files, console output. Hooks that change training
+    # state (schedulers, EMA, early stopping, evaluation) must run on every
+    # process and keep the default False.
+    main_process_only: bool = False
+
     # Order and frequency are documented on Trainer. In short:
     def before_train(self, state: TrainerState) -> None: ...
     def after_train(self, state: TrainerState) -> None: ...

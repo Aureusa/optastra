@@ -18,6 +18,7 @@ class CommonMetricPrinterHook(Hook):
     year =         {2019}
     }
     """
+    main_process_only = True  # writes files / prints: rank 0 only in multi-process runs
 
     _SKIP = {"data_time", "iter_time"}        # shown explicitly, not in the generic tail
     _SMOOTH = {"total_loss", "iter_time", "data_time"}

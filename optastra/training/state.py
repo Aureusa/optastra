@@ -21,6 +21,7 @@ class TrainerState:
     start_iter: int = 0     # first iter train() runs; advanced by ResumeHook via Checkpointer.load
     micro_step: int = 0     # index of state.current_batch within the current iter (grad accumulation)
     epoch: int = 0
+    epoch_step: int = 0     # batches consumed from the current epoch (saved in checkpoints)
     max_iter: int = 0
     eval_iter: int = 0
     max_eval_iter: int = 0

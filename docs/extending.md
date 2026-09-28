@@ -158,7 +158,10 @@ compact template, and `optastra/tasks/classification.py` is the other
 short complete example. If a metric can't be averaged over batches (R²,
 exact accuracy over unequal batches, mAP), also override
 `build_evaluator()` to return an Evaluator (`reset` / `process` /
-`summarize`) that accumulates over the whole eval pass. Set `required_fields` to the `HeadOutput`
+`summarize`) that accumulates over the whole eval pass, plus `sync()`
+so it also works in multi-GPU runs: add up the accumulators of all
+processes with `optastra.core.distributed.sum_across_processes` (see
+`RegressionEvaluator.sync`). Set `required_fields` to the `HeadOutput`
 fields your task needs (e.g. `("logits",)`) so a mismatched head fails
 loudly via `Task.validate_predictions`.
 
@@ -176,6 +179,11 @@ class MyHook(Hook):
 Hooks are plain classes, not registry-backed -- add yours to
 `optastra/training/hooks/__init__.py`'s explicit import list and pass an
 instance to `trainer.register_hooks([MyHook(...)])`.
+
+In multi-GPU (DDP) runs every hook runs in every process. If yours only
+writes files or prints, set `main_process_only = True` on the class so it
+runs on rank 0 alone; if it changes training state, leave it False so all
+processes stay identical.
 
 ## Conventions checklist
 

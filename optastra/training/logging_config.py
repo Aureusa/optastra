@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ..core.distributed import get_rank, is_main_process
+
 
 _COLOR_MAP = {
     logging.DEBUG: "\033[36m",
@@ -29,6 +31,20 @@ class ColorFormatter(logging.Formatter):
         return f"{prefix}: {message}"
 
 
+class MainProcessFilter(logging.Filter):
+    """Multi-process (DDP) runs: only rank 0 emits INFO/DEBUG records; other
+    ranks still emit warnings and errors, prefixed with their rank."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if is_main_process():
+            return True
+        if record.levelno < logging.WARNING:
+            return False
+        if not getattr(record, "_rank_tagged", False):
+            record.msg, record._rank_tagged = f"[rank {get_rank()}] {record.msg}", True
+        return True
+
+
 def setup_logging(
     output_dir: str | Path,
     *,
@@ -42,6 +58,9 @@ def setup_logging(
     """Configure the shared optastra logger tree for console and file output.
 
     Child loggers like ``optastra.train`` and ``optastra.eval`` inherit this setup.
+    In multi-process (DDP) runs only rank 0 writes the log file and prints
+    INFO lines; other ranks print warnings and errors only. The check happens
+    per record, so calling this before the process group exists is fine.
     """
 
     output_path = Path(output_dir)
@@ -65,12 +84,14 @@ def setup_logging(
         console_handler = logging.StreamHandler()
         console_handler.setLevel(level)
         console_handler.setFormatter(color_formatter if color else formatter)
+        console_handler.addFilter(MainProcessFilter())
         logger.addHandler(console_handler)
 
     if file:
         file_handler = logging.FileHandler(output_path / filename)
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
+        file_handler.addFilter(lambda record: is_main_process())   # one writer per log file
         logger.addHandler(file_handler)
 
     return logger

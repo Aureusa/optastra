@@ -6,6 +6,7 @@ from ..state import TrainerState
 class ConsoleLoggerHook(Hook):
     """Minimal console logger: smoothed train loss every `log_every` iters and
     the per-batch eval scalars every `log_every` eval batches."""
+    main_process_only = True  # writes files / prints: rank 0 only in multi-process runs
 
     def __init__(self, log_every: int = 20):
         self.log_every = log_every

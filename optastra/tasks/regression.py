@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .base import Task, Stage, TaskStepOutput
+from ..core.distributed import sum_across_processes
 from ..nn.features import HeadOutput
 
 
@@ -69,6 +70,20 @@ class RegressionEvaluator:
             # output.loss is a mean over the batch -> weight it by the batch size.
             self.loss_sum += float(output.loss) * true.shape[0]
             self.loss_count += true.shape[0]
+
+    def sync(self) -> None:
+        """Add up every process's running sums (multi-process evaluation).
+        A process that saw no batches has no per-output sums yet: it sends
+        only its zero counts, and receives everyone else's sums."""
+        local = {"count": self.count, "loss_sum": self.loss_sum, "loss_count": self.loss_count}
+        if self.abs_err is not None:
+            local |= {"abs_err": self.abs_err, "sq_err": self.sq_err,
+                      "target_sum": self.target_sum, "target_sq_sum": self.target_sq_sum}
+        total = sum_across_processes(local)
+        self.count, self.loss_sum, self.loss_count = total["count"], total["loss_sum"], total["loss_count"]
+        if "abs_err" in total:
+            self.abs_err, self.sq_err = total["abs_err"], total["sq_err"]
+            self.target_sum, self.target_sq_sum = total["target_sum"], total["target_sq_sum"]
 
     def summarize(self) -> dict[str, float]:
         results = {}

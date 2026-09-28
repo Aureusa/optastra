@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .base import Task, Stage, TaskStepOutput
+from ..core.distributed import sum_across_processes
 from ..nn.features import HeadOutput
 
 
@@ -38,6 +39,15 @@ class ClassificationEvaluator:
             # output.loss is a mean over the batch -> weight it by the batch size.
             self.loss_sum += float(output.loss) * n
             self.loss_count += n
+
+    def sync(self) -> None:
+        """Add up every process's counts (multi-process evaluation)."""
+        total = sum_across_processes({
+            "correct": self.correct, "total": self.total,
+            "loss_sum": self.loss_sum, "loss_count": self.loss_count,
+        })
+        self.correct, self.total = total["correct"], total["total"]
+        self.loss_sum, self.loss_count = total["loss_sum"], total["loss_count"]
 
     def summarize(self) -> dict[str, float]:
         results = {}

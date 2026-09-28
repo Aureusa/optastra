@@ -7,6 +7,7 @@ class VisualizerHook(Hook):
     """Saves pre-/post-transform views of the first image of the batch.
     matplotlib is imported lazily on first use, so `import optastra` never
     pulls it in."""
+    main_process_only = True  # writes files / prints: rank 0 only in multi-process runs
 
     def __init__(self, output_dir: str, visualize_every: int = 500):
         self.output_dir = output_dir

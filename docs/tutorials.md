@@ -16,6 +16,7 @@ way it is, and what to change when you move to real data.
 | [6. Add your own backbone](#6-add-your-own-backbone) | `09` |
 | [7. Predict continuous values, and add your own task](#7-predict-continuous-values-and-add-your-own-task) | `10` |
 | [8. Customize training: hooks, checkpoints, resuming](#8-customize-training-hooks-checkpoints-resuming) | `11`, `02` |
+| [9. Train on several GPUs](#9-train-on-several-gpus) | `13` |
 
 The mental model behind all of them (see [Concepts](concepts.md)):
 
@@ -229,3 +230,62 @@ The model, Trainer and hooks need no changes.
 - `02` shows the transform side of customization: a new augmentation in
   about 15 lines, drawing its randomness from the seedable
   `optastra.transforms.rng` generator.
+
+## 9. Train on several GPUs
+
+*Script: `13_multi_gpu_ddp.py`*
+
+Data-parallel training (PyTorch DDP) needs no code changes: launch the same
+script with `torchrun` instead of `python`.
+
+```bash
+python   train.py                          # 1 GPU
+torchrun --nproc_per_node=2 train.py       # 2 GPUs on this node, one process each
+```
+
+On a SLURM cluster, for example one node with 2 A100s:
+
+```bash
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1          # one launcher; torchrun starts the 2 workers
+#SBATCH --gpus-per-node=2
+#SBATCH --cpus-per-task=16           # for DataLoader workers (num_workers per process)
+srun torchrun --standalone --nproc_per_node=2 train.py
+```
+
+What happens under torchrun:
+
+- Each process takes one GPU, trains on a disjoint shard of the data
+  (`build_dataloader` sets that up), and gradients are averaged across
+  processes every optimizer step.
+- `batch_size` is per GPU: with 2 GPUs each optimizer step sees twice the
+  data. Either scale the learning rate with the global batch (as `13`
+  does), or halve `batch_size` to keep the old global batch. `max_iter`
+  still counts optimizer steps, so an epoch takes half as many iterations.
+- Evaluation is sharded too, and the results are combined exactly, so
+  every process sees the same `val_*` metrics and early stopping / best
+  checkpoints agree.
+- Checkpoints, `metrics.jsonl` and console logs are written once, by rank 0.
+  Custom hooks that only write or print should set `main_process_only = True`.
+- Use `optastra.core.distributed` for anything you do yourself:
+  `is_main_process()` before printing or saving, `broadcast_object(...)` to
+  share a value picked on rank 0 (e.g. a run directory), `barrier()`.
+
+**Getting the most out of A100s:**
+
+- `precision="bf16"`: A100s run bf16 natively, and bf16 needs no loss scaling.
+- `torch.set_float32_matmul_precision("high")` at the top of the script
+  lets the remaining fp32 matrix multiplies use TF32.
+- Feed the GPUs: `build_dataloader(..., num_workers=8, pin_memory=True,
+  persistent_workers=True)` per process. If `data_time` in the logs is a
+  large part of `iter_time`, data loading is the bottleneck.
+- `sync_batchnorm=True` when the per-GPU batch is small (e.g. detection),
+  so BatchNorm statistics use the whole global batch.
+- Leave `find_unused_parameters` off (it slows every step) unless DDP stops
+  with an error about parameters that received no gradient -- then a module
+  is being skipped in some forward passes, and the flag handles it.
+
+To test the setup without GPUs: `torchrun --nproc_per_node=2` on a CPU-only
+machine runs the same code with CPU processes (example `13` does this
+automatically when there are fewer GPUs than processes).

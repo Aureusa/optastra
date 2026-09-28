@@ -193,6 +193,43 @@ trainer = Trainer(
   before the next epoch's first batch is fetched, followed by
   `before_epoch`.
 
+### Multiple GPUs (DDP)
+
+Launch the same script with `torchrun --nproc_per_node=N` instead of
+`python` and it trains data-parallel on N GPUs -- one process per GPU,
+nothing to change in the code:
+
+- `Trainer(..., distributed=None)` detects torchrun (`distributed=True` /
+  `False` forces it), joins the process group
+  (`optastra.core.distributed.init_distributed`), puts process `LOCAL_RANK`
+  on GPU `LOCAL_RANK`, and wraps the model in `DistributedDataParallel` when
+  `train()` starts -- after the `before_train` hooks, so resuming and
+  freezing act on the plain model. `state.model` stays the plain module:
+  hooks, checkpoints and `evaluate()` never see the wrapper.
+- `build_dataloader` gives each process a disjoint shard through a
+  `ShardedSampler` (no padding, no dropped samples; reshuffled every epoch
+  with a seed shared by all processes). `batch_size` is per process, so
+  the global batch -- and usually the learning rate -- scales with N.
+- Gradients are averaged across processes at every optimizer step (once
+  per step under gradient accumulation); logged losses are the mean over
+  processes.
+- `evaluate()` is sharded as well: each process evaluates its shard and the
+  task's Evaluator combines them (`Evaluator.sync`), so every process gets
+  the same, exact dataset-level metrics -- and hooks that act on them
+  (early stopping, best checkpoints) make the same decision everywhere.
+- Hooks with `main_process_only = True` -- checkpoint writers, the JSON
+  writer, console printers, the visualizer -- run on rank 0 only;
+  everything that changes training state (schedulers, EMA, evaluation,
+  early stopping, resuming) runs on every process. `setup_logging` lets
+  only rank 0 print INFO lines and write the log file.
+- `sync_batchnorm=True` computes BatchNorm statistics over the global batch
+  (GPU only; useful for small per-GPU batches); `find_unused_parameters=True`
+  is needed only if some parameters take no part in some forward passes --
+  DDP's error message says so when it happens.
+
+Resuming is exact when the checkpoint was written at the end of an epoch
+(a checkpoint from mid-epoch restarts that epoch's data pass).
+
 ### Evaluation
 
 `trainer.evaluate(loader)` makes exactly one pass over the loader and

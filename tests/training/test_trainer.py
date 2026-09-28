@@ -362,3 +362,39 @@ def test_evaluate_keeps_eval_step_scalars_out_of_train_storage_and_restores_stat
     assert not any(k.startswith("val_step_") for k in trainer.storage.keys())
     assert "val_step_total_loss" in trainer.storage.keys(axis="eval_iter")
     assert trainer.state.last_output is train_output
+
+
+def test_compile_option_compiles_the_train_step_but_not_state_model(tmp_path):
+    from optastra.training import Checkpointer
+
+    torch.manual_seed(0)
+    reference, _ = _compile_run(compile=False)
+    torch.manual_seed(0)
+    compiled, trainer = _compile_run(compile={"backend": "eager"})
+    assert trainer._train_model is not trainer.state.model            # the train step ran compiled
+    assert not hasattr(trainer.state.model, "_orig_mod")             # hooks/checkpoints see the plain model
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(compiled.state_dict()[key], value)
+    path = Checkpointer(str(tmp_path)).save(trainer.state, "ckpt.pt")
+    assert all(not k.startswith("_orig_mod") for k in torch.load(path, weights_only=True)["model"])
+
+
+def _compile_run(compile):
+    from optastra import Sample, Task, build_dataloader
+    from optastra.nn.features import HeadOutput
+
+    class Net(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(3, 1)
+
+        def forward(self, x):
+            return HeadOutput(values=self.linear(x))
+
+    g = torch.Generator().manual_seed(0)
+    data = [Sample(image=torch.randn(3, generator=g), target={"values": torch.randn((), generator=g)}) for _ in range(16)]
+    task = Task.create("regression_task")
+    model = Net()
+    trainer = Trainer(model, task, torch.optim.SGD(model.parameters(), lr=0.1), device="cpu", compile=compile)
+    trainer.train(build_dataloader(data, task=task, batch_size=4), max_iter=6)
+    return model, trainer

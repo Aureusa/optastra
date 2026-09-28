@@ -6,7 +6,11 @@ import time
 import torch
 import torch.nn as nn
 from collections.abc import Mapping as MappingABC
+from torch.nn.parallel import DistributedDataParallel
 
+from ..core.distributed import (
+    all_reduce_mean, env_world_size, get_local_rank, init_distributed, is_main_process, sum_across_processes,
+)
 from ..tasks.base import Task, MeanMetricEvaluator
 from .state import TrainerState
 from .storage import EventStorage
@@ -17,6 +21,15 @@ __all__ = ["Trainer", "Precision"]
 
 
 Precision = Literal["fp32", "bf16", "fp16"]
+
+
+def _num_batches(dataloader: Iterable) -> int | None:
+    """Batches per pass, or None when unknown -- e.g. a DataLoader over an
+    IterableDataset, which has `__len__` but raises TypeError when called."""
+    try:
+        return len(dataloader)
+    except TypeError:
+        return None
 _AUTOCAST_DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16}
 
 
@@ -40,6 +53,32 @@ class Trainer:
     - ``clip_grad_norm``: if set, the total gradient norm is clipped to this
       value before each optimizer step, and the pre-clip norm is logged to
       storage as "grad_norm".
+    - ``distributed``: multi-process data-parallel training (DDP), one
+      process per GPU. None (default) = on exactly when the script was
+      launched with ``torchrun --nproc_per_node=N`` (N > 1), so the same
+      script runs unchanged with ``python``. Each process uses GPU
+      ``LOCAL_RANK``, trains on its own shard of the data (see
+      ``build_dataloader``), and gradients are averaged across processes
+      every optimizer step -- so ``batch_size`` is per process and the
+      effective batch is ``batch_size * world_size``. ``state.model`` stays
+      the plain module (hooks, checkpoints and evaluation never see the DDP
+      wrapper); hooks with ``main_process_only = True`` (checkpoints, log
+      files, console printing) run on rank 0 only, everything else on every
+      process. Evaluation is sharded too and combined exactly by the task's
+      Evaluator (``Evaluator.sync``).
+    - ``sync_batchnorm``: DDP only -- convert BatchNorm layers to
+      SyncBatchNorm so batch statistics are computed over the global batch
+      (helps when the per-GPU batch is small, e.g. detection).
+    - ``compile``: ``torch.compile`` the module the train step calls --
+      after DDP wrapping, the order PyTorch recommends. True for the
+      defaults, or a dict of ``torch.compile`` kwargs (e.g.
+      ``{"mode": "max-autotune"}``). ``state.model`` stays uncompiled, so
+      hooks, checkpoints and ``evaluate()`` are unaffected. Pass the model
+      uncompiled: don't combine this with a model you compiled yourself.
+    - ``find_unused_parameters``: DDP only -- set True if some parameters
+      take no part in some forward passes (e.g. a branch that is skipped
+      conditionally); DDP raises an error telling you so otherwise. It adds
+      overhead, so leave it off unless that error appears.
 
     Hook lifecycle within ``train()``::
 
@@ -69,13 +108,30 @@ class Trainer:
         precision: Precision = "fp32",
         grad_accum_steps: int = 1,
         clip_grad_norm: float | None = None,
+        distributed: bool | None = None,
+        sync_batchnorm: bool = False,
+        find_unused_parameters: bool = False,
+        compile: bool | dict = False,
     ):
         if precision not in ("fp32", *_AUTOCAST_DTYPES):
             raise ValueError(f"precision must be 'fp32', 'bf16' or 'fp16', got {precision!r}")
         if grad_accum_steps < 1:
             raise ValueError(f"grad_accum_steps must be >= 1, got {grad_accum_steps}")
 
+        if distributed is None:
+            distributed = env_world_size() > 1
+        self.distributed = distributed and init_distributed()
+        if self.distributed and torch.device(device).type == "cuda":
+            device = torch.device("cuda", get_local_rank())   # one GPU per process
+        self.sync_batchnorm = sync_batchnorm
+        self.find_unused_parameters = find_unused_parameters
+        self._ddp_model: DistributedDataParallel | None = None   # built lazily in train()
+        self.compile = compile
+        self._compiled_model: nn.Module | None = None
+
         resolved_device = self._resolve_device(device)
+        if self.distributed and sync_batchnorm and resolved_device.type == "cpu":
+            raise ValueError("sync_batchnorm=True needs GPUs: PyTorch's SyncBatchNorm does not run on CPU.")
         model = model.to(resolved_device)
         self.precision = precision
         self.grad_accum_steps = grad_accum_steps
@@ -97,6 +153,11 @@ class Trainer:
             raise RuntimeError(
                 "CUDA is selected as the training device, but no CUDA device is available. "
                 "Set device='cpu' explicitly if you want to run on CPU."
+            )
+        if resolved.type == "cuda" and resolved.index is not None and resolved.index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"Device {resolved} does not exist: this process sees {torch.cuda.device_count()} GPU(s). "
+                "With torchrun, --nproc_per_node must not exceed the number of GPUs."
             )
         return resolved
 
@@ -122,7 +183,10 @@ class Trainer:
         self.hooks.sort(key=lambda hook: getattr(hook, "priority", Hook.priority))
 
     def _run_hooks(self, method_name: str) -> None:
+        main = is_main_process()
         for hook in self.state.hooks:
+            if not main and getattr(hook, "main_process_only", False):
+                continue   # checkpoints / log files / printing happen on rank 0 only
             # getattr default: duck-typed hooks don't have to define every event.
             getattr(hook, method_name, lambda state: None)(self.state)
 
@@ -142,22 +206,35 @@ class Trainer:
         except StopIteration:
             self._run_hooks("after_epoch")
             self.state.epoch += 1
+            self.state.epoch_step = 0
             self._run_hooks("before_epoch")
             t0 = time.perf_counter()  # don't count hook time as data time
+            self._set_sampler_epoch(dataloader)
             data_iter = iter(dataloader)
             try:
                 batch = next(data_iter)
             except StopIteration:
                 raise ValueError("The training dataloader yielded no batches.") from None
+        self.state.epoch_step += 1
         return data_iter, batch, time.perf_counter() - t0
 
     def train(self, dataloader: Iterable[Mapping[str, Any]], max_iter: int) -> None:
         """Runs optimizer steps `start_iter .. max_iter - 1` (see class docstring)."""
         self.state.max_iter = max_iter
         self._run_hooks("before_train")
-        # before_train hooks (ResumeHook) may have advanced start_iter / epoch.
+        # before_train hooks (ResumeHook) may have advanced start_iter / epoch,
+        # and FreezeBackboneHook may have frozen parameters -- only now wrap for DDP.
+        self._train_model = self._model_for_training()
+        # Epochs roll over lazily, so a checkpoint written right after an
+        # epoch's last batch still carries that epoch's number: resume at the
+        # next one. (A checkpoint from mid-epoch restarts that epoch's pass.)
+        num_batches = _num_batches(dataloader)
+        if self.state.epoch_step and num_batches is not None and self.state.epoch_step >= num_batches:
+            self.state.epoch += 1
+        self.state.epoch_step = 0
         self._run_hooks("before_epoch")
 
+        self._set_sampler_epoch(dataloader)
         data_iter = iter(dataloader)
         for it in range(self.state.start_iter, max_iter):
             if self.state.should_stop:
@@ -168,9 +245,52 @@ class Trainer:
 
         self._run_hooks("after_train")
 
+    def _model_for_training(self) -> nn.Module:
+        """The module the train step calls: `state.model` itself, or -- in
+        distributed runs -- a DistributedDataParallel wrapper around it, which
+        averages gradients across processes during backward; compiled on top
+        if `compile` is set.
+
+        Built once, on the first train() call and after the before_train
+        hooks, so ResumeHook and FreezeBackboneHook act on the plain model
+        (DDP fixes the set of trainable parameters when it is created).
+        """
+        model = self._wrap_ddp() if self.distributed else self.state.model
+        if not self.compile:
+            return model
+        if self._compiled_model is None:
+            kwargs = self.compile if isinstance(self.compile, dict) else {}
+            self._compiled_model = torch.compile(model, **kwargs)
+        return self._compiled_model
+
+    def _wrap_ddp(self) -> DistributedDataParallel:
+        if self._ddp_model is None:
+            if self.sync_batchnorm:
+                # Swaps BatchNorm modules for SyncBatchNorm; the parameters are
+                # the same objects, so the optimizer is unaffected.
+                self.state.model = nn.SyncBatchNorm.convert_sync_batchnorm(self.state.model)
+            device_ids = [self.state.device.index] if self.state.device.type == "cuda" else None
+            self._ddp_model = DistributedDataParallel(
+                self.state.model, device_ids=device_ids, find_unused_parameters=self.find_unused_parameters,
+            )
+        return self._ddp_model
+
+    def _set_sampler_epoch(self, dataloader: Iterable) -> None:
+        """Tell a sharded sampler which epoch starts, so every epoch gets a
+        new shuffle -- the same one on every process, keeping shards disjoint.
+        An IterableDataset with a `set_epoch` method (it shards and shuffles
+        itself) is told the same way."""
+        sampler = getattr(dataloader, "sampler", None)
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(self.state.epoch)
+        dataset = getattr(dataloader, "dataset", None)
+        if isinstance(dataset, torch.utils.data.IterableDataset) and hasattr(dataset, "set_epoch"):
+            dataset.set_epoch(self.state.epoch)
+
     def _train_step(self, data_iter: Iterator, dataloader: Iterable) -> Iterator:
         """One optimizer step over `grad_accum_steps` micro-batches."""
         state = self.state
+        model = self._train_model
         step_start = time.perf_counter()
         state.optimizer.zero_grad(set_to_none=True)
 
@@ -186,10 +306,15 @@ class Trainer:
 
             self._run_hooks("before_step")  # e.g. BatchTransformHook edits state.current_batch
 
-            with self._autocast():
-                output = state.task.run_step(state.model, state.current_batch, stage="train")
-            # Mean over micro-batches: each contributes 1/N of the gradient.
-            self.grad_scaler.scale(output.loss / self.grad_accum_steps).backward()
+            # DDP averages gradients across processes during backward. Under
+            # gradient accumulation that only needs to happen once, on the last
+            # micro-batch -- until then gradients just accumulate locally.
+            last_micro_step = micro_step == self.grad_accum_steps - 1
+            with nullcontext() if self._ddp_model is None or last_micro_step else self._ddp_model.no_sync():
+                with self._autocast():
+                    output = state.task.run_step(model, state.current_batch, stage="train")
+                # Mean over micro-batches: each contributes 1/N of the gradient.
+                self.grad_scaler.scale(output.loss / self.grad_accum_steps).backward()
 
             loss_sum += output.loss.item()
             for k, v in output.losses.items():
@@ -203,11 +328,15 @@ class Trainer:
         self.grad_scaler.update()
 
         n = self.grad_accum_steps
+        losses = {"total_loss": loss_sum / n, **{k: v / n for k, v in losses_sum.items()}}
+        if self.distributed:   # log the mean over all processes, not just this shard's
+            mean = all_reduce_mean(torch.tensor(list(losses.values()), dtype=torch.float64, device=state.device))
+            losses = dict(zip(losses, mean.tolist()))
+
         state.last_output = output
         self.storage.put_scalar("data_time", total_data_time)
         self.storage.put_scalar("iter_time", time.perf_counter() - step_start)
-        self.storage.put_scalar("total_loss", loss_sum / n)
-        self.storage.put_scalars(**{k: v / n for k, v in losses_sum.items()})
+        self.storage.put_scalars(**losses)
         return data_iter
 
     @torch.no_grad()
@@ -222,18 +351,27 @@ class Trainer:
         `val_accuracy`, `val_total_loss` -- where they persist, and also
         mirrored in `state.eval_results` before the after_eval hooks run.
 
+        Distributed runs: every process must call this (as EvalHook does);
+        each evaluates its own shard of a `build_dataloader` loader, and the
+        Evaluator's `sync()` combines the shards before `summarize()`, so all
+        processes get the same, exact dataset-level results.
+
         Returns the un-prefixed results (e.g. {"accuracy": ..., "total_loss": ...}).
         """
         state, storage = self.state, self.storage
+        build_evaluator = getattr(state.task, "build_evaluator", None)
+        evaluator = build_evaluator() if build_evaluator is not None else MeanMetricEvaluator()
+        if self.distributed and not hasattr(evaluator, "sync"):
+            raise TypeError(
+                f"{type(evaluator).__name__} has no sync() method, which distributed evaluation needs to "
+                "combine the processes' results -- see the Evaluator protocol in optastra/tasks/base.py."
+            )
         was_training = state.model.training
         train_output = state.last_output
         state.model.eval()
         storage.reset_eval()
-        storage.max_eval_iter = len(dataloader) if hasattr(dataloader, "__len__") else 0
+        storage.max_eval_iter = _num_batches(dataloader) or 0
         state.eval_results = {}
-
-        build_evaluator = getattr(state.task, "build_evaluator", None)
-        evaluator = build_evaluator() if build_evaluator is not None else MeanMetricEvaluator()
         evaluator.reset()
         self._run_hooks("before_eval")
 
@@ -261,6 +399,9 @@ class Trainer:
                 num_batches += 1
                 fetch_start = time.perf_counter()
 
+            if self.distributed:   # combine every process's shard (also when this one had no batches)
+                evaluator.sync()
+                num_batches = int(sum_across_processes({"batches": num_batches})["batches"])
             if num_batches == 0:
                 self.logger.warning("evaluate(): the dataloader yielded no batches; no metrics were written.")
                 return {}
