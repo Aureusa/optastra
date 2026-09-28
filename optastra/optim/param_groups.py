@@ -5,7 +5,7 @@ import torch.nn as nn
 
 __all__ = ["ParamGroupConfig", "build_param_groups", "DEFAULT_NO_DECAY_NAMES"]
 
-NORM_MODULES = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm, nn.GroupNorm)
+NORM_MODULES = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm, nn.LayerNorm, nn.GroupNorm)
 
 # Parameters that are conventionally never weight-decayed, matched against
 # any dotted component of the parameter name (so both `cls_token` and

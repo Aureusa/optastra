@@ -40,6 +40,14 @@ class WarmupCosine(lr_scheduler.LambdaLR):
         self.cfg = cfg
         super().__init__(optimizer, lr_lambda=self._warmup_cosine_lambda(cfg))
 
+    def state_dict(self) -> dict:
+        # The config comes from the constructor, not from training progress.
+        # Leaving the dataclass out keeps checkpoints loadable with
+        # torch.load(weights_only=True), the default since PyTorch 2.6.
+        state = super().state_dict()
+        state.pop("cfg", None)
+        return state
+
     @staticmethod
     def _warmup_cosine_lambda(cfg: WarmupCosineConfig):
         def fn(step: int) -> float:

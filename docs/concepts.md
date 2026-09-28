@@ -210,6 +210,10 @@ nothing to change in the code:
   `ShardedSampler` (no padding, no dropped samples; reshuffled every epoch
   with a seed shared by all processes). `batch_size` is per process, so
   the global batch -- and usually the learning rate -- scales with N.
+  An `IterableDataset` (e.g. a stream over large sharded files) is left
+  alone: it must split itself across processes (`get_rank()` /
+  `get_world_size()`), and if it has `set_epoch(epoch)` the Trainer calls
+  it at the start of every epoch.
 - Gradients are averaged across processes at every optimizer step (once
   per step under gradient accumulation); logged losses are the mean over
   processes.
@@ -223,7 +227,9 @@ nothing to change in the code:
   early stopping, resuming) runs on every process. `setup_logging` lets
   only rank 0 print INFO lines and write the log file.
 - `sync_batchnorm=True` computes BatchNorm statistics over the global batch
-  (GPU only; useful for small per-GPU batches); `find_unused_parameters=True`
+  (GPU only; useful for small per-GPU batches); `compile=True` applies
+  `torch.compile` to the DDP-wrapped model (the recommended order -- pass
+  the model uncompiled); `find_unused_parameters=True`
   is needed only if some parameters take no part in some forward passes --
   DDP's error message says so when it happens.
 

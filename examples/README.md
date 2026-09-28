@@ -25,6 +25,8 @@ python examples/09_custom_backbone.py
 python examples/10_regression.py
 python examples/11_hooks_checkpoint_resume.py
 python examples/12_compare_backbones.py
+python examples/13_multi_gpu_ddp.py
+torchrun --nproc_per_node=2 examples/13_multi_gpu_ddp.py   # same script, 2 processes / GPUs
 ```
 
 | Script | Demonstrates |
@@ -41,6 +43,7 @@ python examples/12_compare_backbones.py
 | `10_regression.py` | Regression with two continuous outputs per image: `vanilla_regression_head` + `regression_task` (huber loss), dataset-level MAE / RMSE / R², and prediction. |
 | `11_hooks_checkpoint_resume.py` | Custom hooks (a new logged metric; a simulated crash), periodic checkpoints, `ResumeHook` resuming to bit-identical weights, and reading `logs/metrics.jsonl`. |
 | `12_compare_backbones.py` | ResNet vs EfficientNet vs ConvNeXt vs ViT on the same data, where only the backbone reference changes: params, speed, and validation accuracy side by side. |
+| `13_multi_gpu_ddp.py` | Multi-GPU data-parallel training (DDP): the same script under `python` or `torchrun --nproc_per_node=2` -- sharded data, averaged gradients, exact sharded evaluation, rank-0-only checkpoints/logs, a SLURM launch line. Falls back to CPU processes when there are fewer GPUs. |
 
 See [`../docs/tutorials.md`](../docs/tutorials.md) for scenario walkthroughs built on
 these scripts, [`../docs/getting-started.md`](../docs/getting-started.md) for a

@@ -277,6 +277,9 @@ What happens under torchrun:
 - `precision="bf16"`: A100s run bf16 natively, and bf16 needs no loss scaling.
 - `torch.set_float32_matmul_precision("high")` at the top of the script
   lets the remaining fp32 matrix multiplies use TF32.
+- `Trainer(..., compile=True)` compiles the train step after DDP wrapping
+  (pass the model uncompiled). Large-batch SSL recipes (BYOL, SimCLR)
+  usually pair with `Optimizer.create("lars", model, ...)`.
 - Feed the GPUs: `build_dataloader(..., num_workers=8, pin_memory=True,
   persistent_workers=True)` per process. If `data_time` in the logs is a
   large part of `iter_time`, data loading is the bottleneck.
