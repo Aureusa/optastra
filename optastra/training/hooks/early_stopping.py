@@ -56,6 +56,6 @@ class EarlyStoppingHook(Hook):
 
     def load_state_dict(self, state: dict) -> None:
         # Checkpoints written before the tracker refactor stored "best" at the top level.
-        self.tracker.load_state_dict(state.get("tracker", {"best": state["best"]}))
+        self.tracker.load_state_dict(state["tracker"] if "tracker" in state else {"best": state["best"]})
         self.bad_evals = state["bad_evals"]
         self.logger.info(f"EarlyStoppingHook state loaded: best={self.tracker.best}, bad_evals={self.bad_evals}.")

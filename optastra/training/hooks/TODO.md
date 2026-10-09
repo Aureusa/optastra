@@ -25,7 +25,7 @@ Checkpoints written before the `BestMetricTracker` refactor store `EarlyStopping
 as `{"best", "bad_evals"}` instead of `{"tracker": {"best"}, "bad_evals"}`.
 Once no old runs need resuming:
 
-- [ ] `early_stopping.py` — `load_state_dict`: drop the `state.get("tracker", {"best": state["best"]})` fallback.
+- [ ] `early_stopping.py` — `load_state_dict`: drop the `{"best": state["best"]}` fallback for pre-tracker checkpoints.
 - [ ] `checkpoint.py` — `BestCheckpointHook.load_state_dict`: drop the `if "tracker" in state` guard.
 - [ ] `optastra/tests/training/test_hooks.py` — delete `test_early_stopping_loads_pre_tracker_checkpoint_state`.
 

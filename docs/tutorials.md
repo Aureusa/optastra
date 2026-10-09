@@ -109,7 +109,9 @@ model = build_sequential_model(("resnet50", {"weights": "backbone.pt"}), ["globa
   backbone's key prefix (`online_backbone.`, `backbone.`, `0.`, and
   `torch.compile`'s `_orig_mod.`) is detected automatically.
 - To freeze the pretrained backbone for a linear probe, add
-  `FreezeBackboneHook()`.
+  `FreezeBackboneHook()`. It also keeps the backbone in eval mode (BatchNorm
+  uses its pretrained statistics, as in the SimCLR/MoCo/BYOL linear protocol);
+  `FreezeBackboneHook(eval_mode=False)` freezes only the weights.
 
 ## 4. Detect objects
 

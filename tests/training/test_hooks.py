@@ -166,6 +166,15 @@ def test_early_stopping_loads_pre_tracker_checkpoint_state():
     assert hook.bad_evals == 3
 
 
+def test_early_stopping_state_dict_round_trip():
+    hook = EarlyStoppingHook(metric="loss")
+    hook.tracker.best, hook.bad_evals = 0.4, 2
+    restored = EarlyStoppingHook(metric="loss")
+    restored.load_state_dict(hook.state_dict())   # no top-level "best": must not need one
+    assert restored.tracker.best == 0.4
+    assert restored.bad_evals == 2
+
+
 def test_ema_hook_updates_teacher_parameters():
     student = nn.Linear(3, 3, bias=False)
     teacher = nn.Linear(3, 3, bias=False)
@@ -421,3 +430,40 @@ def test_eval_summaries_persist_in_storage_and_reach_metrics_jsonl(tmp_path):
     # Train records keep reporting train scalars only.
     train_records = [r for r in records if r["phase"] == "train"]
     assert all(set(r["scalars"]) == {"total_loss", "ce_loss"} for r in train_records)
+
+
+def _frozen_run(eval_mode: bool):
+    """4 SGD steps on a tiny ResNet classifier with FreezeBackboneHook, an eval at iter 2 in between."""
+    from optastra.core.build import build_sequential_model
+    from optastra.training.hooks.freeze_backbone import FreezeBackboneHook
+
+    torch.manual_seed(0)
+    model = build_sequential_model(backbone=("resnet18", {"in_channels": 1}), necks=["global_avg_pool"],
+                                   head=("vanilla_classification_head", {"num_classes": 3, "hidden_features": 8}))
+    g = torch.Generator().manual_seed(0)
+    batches = [{"inputs": 3 + 2 * torch.randn(4, 1, 32, 32, generator=g), "targets": torch.randint(0, 3, (4,), generator=g)}
+               for _ in range(4)]
+    before = {k: v.clone() for k, v in model.state_dict().items()}
+    trainer = Trainer(model, ClassificationTask(), torch.optim.SGD(model.parameters(), lr=0.1), device="cpu")
+    trainer.register_hooks([FreezeBackboneHook(freeze=True, eval_mode=eval_mode),
+                            EvalHook(2, eval_fn=lambda: trainer.evaluate(batches[:1]), eval_after_train=False)])
+    trainer.train(batches, max_iter=4)
+    return model, before
+
+
+def test_freeze_backbone_eval_mode_keeps_batchnorm_statistics():
+    model, before = _frozen_run(eval_mode=True)
+    after = model.state_dict()
+    backbone = [k for k in after if k.startswith("0.")]
+    assert any(k.endswith("running_mean") for k in backbone)
+    assert all(torch.equal(after[k], before[k]) for k in backbone)      # weights AND BN running stats fixed
+    assert any(not torch.equal(after[k], before[k]) for k in after if k.startswith("2."))   # head trained
+    assert not model[0].training                                       # still eval after the mid-run evaluation
+
+
+def test_freeze_backbone_without_eval_mode_updates_batchnorm_statistics():
+    model, before = _frozen_run(eval_mode=False)
+    after = dict(model.named_parameters())
+    assert all(torch.equal(p, before[k]) for k, p in after.items() if k.startswith("0."))   # weights frozen
+    stats = [k for k in model.state_dict() if k.startswith("0.") and k.endswith("running_mean")]
+    assert any(not torch.equal(model.state_dict()[k], before[k]) for k in stats)          # BN stats drifted
