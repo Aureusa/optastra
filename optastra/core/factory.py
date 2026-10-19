@@ -105,6 +105,16 @@ class Factory(Generic[T]):
         for f in fields(cfg):
             print(f"  {f.name}: {f.type} = {getattr(cfg, f.name)!r}")
 
+    def describe_instance(self) -> None:
+        """
+        Describe the current instance using its configuration.
+        """
+        if not hasattr(self, "cfg"):
+            print("  (no config)")
+            return
+        for f in fields(self.cfg):
+            print(f"  {f.name}: {f.type} = {getattr(self.cfg, f.name)!r}")
+
     @classmethod
     def get_default_config(cls, name: str) -> Any:
         """A deep copy of the registered default config (None if configless)."""

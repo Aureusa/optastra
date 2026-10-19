@@ -20,7 +20,8 @@ def build_experiment_from_config(cfg: ExperimentConfig) -> dict:
 def build_sequential_model(
         backbone: ComponentRef,
         necks: list[ComponentRef],
-        head: ComponentRef
+        head: ComponentRef,
+        describe: bool = False,
     ) -> Architecture:
     """
     Build a sequential model architecture from the given backbone, necks, and head.
@@ -34,6 +35,7 @@ def build_sequential_model(
     :param backbone: ComponentRef for the backbone.
     :param necks: List of ComponentRefs for the necks.
     :param head: ComponentRef for the head.
+    :param describe: Whether to print the model description.
     """
     from torch import nn
     backbone = coerce_to_ref(backbone)
@@ -48,7 +50,15 @@ def build_sequential_model(
         neck_modules.append(neck_module)
         out_spec = neck_module.out_spec
     head_module = Head.create(head.name, **head.overrides, in_spec=out_spec)
-    return nn.Sequential(
+    model = nn.Sequential(
         *([bb] + neck_modules + [head_module])
     )
-    
+    if describe:
+        print("Backbone:")
+        bb.describe_instance()
+        for i, neck_module in enumerate(neck_modules):
+            print(f"Neck {i}:")
+            neck_module.describe_instance()
+        print("Head:")
+        head_module.describe_instance()
+    return model
