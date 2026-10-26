@@ -3,7 +3,7 @@
 Optastra optimizes for one thing above all: **adding a new idea should
 touch as few files as possible.** Every family of components (backbones,
 necks, heads, tasks, algorithms, architectures, optimizers, schedulers,
-transforms, proposal generators, region extractors) follows the same
+transforms, decoders, proposal generators, region extractors) follows the same
 convention so that once you've added one component anywhere in the
 codebase, you already know how to add the next one anywhere else.
 
@@ -18,7 +18,7 @@ Every component family is two things:
 1. **A base class** in `<family>/base.py` with a `_registry =
    FamilyRegistry("my_family")` class attribute, inheriting `Factory`
    (no upstream wiring needed -- `Backbone`, `Task`, `Optimizer`, ...) or
-   `SpecFactory` (needs an upstream `FeatureSpec` -- `Neck`, `Head`,
+   `SpecFactory` (needs an upstream `FeatureSpec` -- `Neck`, `Decoder`, `Head`,
    `ProposalGenerator`, `RegionExtractor`):
 
    ```python

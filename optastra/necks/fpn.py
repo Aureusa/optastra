@@ -16,6 +16,10 @@ __all__ = ["FPN", "FPNConfig"]
 class FPNConfig:
     """Config for the FPN neck."""
     out_channels: int = 256
+    # Backbone stages to build the pyramid from; () = all of them. Leaving out a stage no
+    # consumer reads (e.g. C2 when only P3+ are used) avoids parameters that never get a
+    # gradient, which DDP rejects.
+    in_features: tuple[str, ...] = ()
 
 
 def _pyramid_name(stage: str) -> str:
@@ -49,6 +53,11 @@ class FPN(Neck):
         missing = set(in_channels) - set(in_spec.strides)
         if missing:
             raise ValueError(f"FPN needs a stride for every stage; missing strides for {sorted(missing)}.")
+        if cfg.in_features:
+            unknown = [n for n in cfg.in_features if n not in in_channels]
+            if unknown:
+                raise ValueError(f"FPN: in_features {unknown} not in the in_spec ({list(in_channels)}).")
+            in_channels = {n: in_channels[n] for n in cfg.in_features}
         # finest -> coarsest, e.g. ["C2", "C3", "C4", "C5"] (sorting names would put "C10" before "C2")
         self.stage_names = sorted(in_channels, key=lambda name: in_spec.strides[name])
 

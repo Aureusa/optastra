@@ -25,6 +25,19 @@ Architecture output (``HeadOutput.extra`` of Fast / Faster / Mask R-CNN):
                                                  heads ran on; row i matches logits[i]
     RPN                    FeatureMaps           the proposal generator output (Faster/Mask only)
     IMAGE_SIZES            list[tuple[int, int]] one entry per image -- also defines batch size
+
+Set-prediction outputs (DETR family; ``HeadOutput`` of ``detr_box_head`` / ``keypoint_head``
+and of the ``DETR`` architecture):
+    logits / boxes         (B, M, K+1) / (B, M, 4)  class logits (last = no object) and boxes as
+                                                 normalised (cx, cy, w, h) -- fractions of each
+                                                 image's size -- in the typed HeadOutput fields
+    scores                 (B, M)                objectness logits (keypoint_head)
+    POINTS                 (B, M, 2) float       points (x, y) as fractions of each image's size
+    POINT_LOG_SCALES       (B, M, 2) float       optional log of the predicted point scale, same units
+    AUX_OUTPUTS            list[HeadOutput]      the head applied to every earlier decoder layer
+    QUERY_MASK             (B, M) bool           real queries (``optastra.decoders.keys.QUERY_MASK``)
+    IMAGE_SIZES            list[tuple[int, int]] one entry per image
+    DECODER_TOKENS         (B, M, D)             the last decoder layer's tokens (DETR architecture)
 """
 from __future__ import annotations
 
@@ -39,6 +52,11 @@ __all__ = [
     "PROPOSAL_SCORES",
     "ROI_BOXES",
     "RPN",
+    "POINTS",
+    "POINT_LOG_SCALES",
+    "AUX_OUTPUTS",
+    "QUERY_MASK",
+    "DECODER_TOKENS",
 ]
 
 IMAGE_SIZES = "image_sizes"
@@ -53,3 +71,9 @@ PROPOSAL_SCORES = "proposal_scores"
 
 ROI_BOXES = "roi_boxes"
 RPN = "rpn"
+
+POINTS = "points"
+POINT_LOG_SCALES = "point_log_scales"
+AUX_OUTPUTS = "aux_outputs"
+QUERY_MASK = "query_mask"   # same string as optastra.decoders.keys.QUERY_MASK
+DECODER_TOKENS = "decoder_tokens"

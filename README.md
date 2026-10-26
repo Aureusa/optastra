@@ -26,10 +26,16 @@ Most of this README describes the design and its goals. Implemented today:
   pooling necks). Pretrained weights load with
   `Backbone.create(name, weights=path)` from a plain state_dict or any
   optastra checkpoint.
-- **Necks / heads:** FPN, global / GeM / token pooling; classification,
-  regression (continuous values), and R-CNN box and mask heads.
-- **Tasks:** classification, regression (MAE / RMSE / R² evaluation), and detection.
-- **Architectures:** Fast / Faster / Mask R-CNN.
+- **Necks / heads:** FPN, global / GeM / token pooling, the DETR transformer
+  encoder; classification, regression (continuous values), R-CNN box and mask
+  heads, and DETR set-prediction heads (`detr_box_head`, `keypoint_head`).
+- **Decoders:** DETR's query decoder with vanilla, Conditional-DETR and
+  DAB-DETR queries (`query_type`), and external queries placed at known
+  reference points.
+- **Tasks:** classification, regression (MAE / RMSE / R² evaluation), detection
+  (R-CNN, or DETR's Hungarian set loss with `detr_criterion`), and point detection.
+- **Architectures:** Fast / Faster / Mask R-CNN; DETR, Conditional DETR, DAB-DETR
+  and a point-detection DETR (`point_detr_r18_fpn`).
 - **Self-supervised pretraining:** SimCLR and BYOL (EMA teacher with a
   cosine momentum schedule), built from config with any registered
   backbone; `export_backbone` hands the pretrained weights to a

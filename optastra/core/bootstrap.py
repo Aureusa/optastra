@@ -3,6 +3,7 @@ def bootstrap() -> None:
     itself into core.factory.FACTORIES. Call once at process/import start."""
     from ..backbones import base as _  # noqa: F401
     from ..necks import base as _      # noqa: F401
+    from ..decoders import base as _   # noqa: F401
     from ..heads import base as _      # noqa: F401
     from ..tasks import base as _      # noqa: F401
     from ..algorithms import base as _ # noqa: F401

@@ -11,7 +11,32 @@ __all__ = [
     "RotaryPosEmbed2D",
     "interpolate_pos_embed",
     "get_2d_sincos_pos_embed",
+    "sine_embed_2d",
 ]
+
+
+def sine_embed_2d(coords: torch.Tensor, dim: int, temperature: float = 10000.0, scale: float = 2 * math.pi) -> torch.Tensor:
+    """DETR-style sine embedding of continuous 2D coordinates.
+
+    Unlike ``get_2d_sincos_pos_embed`` (integer grid positions), this embeds
+    arbitrary points -- feature-cell centres, query reference points -- given
+    as fractions of the image size, so the same point gets the same code at
+    any resolution.
+
+    :param coords: (..., 2) as (x, y), normalised to [0, 1].
+    :param dim: output width, divisible by 4.
+    :return: (..., dim): the first half encodes y, the second half x; each half
+        is [sin(c / t_k) for k] + [cos(c / t_k) for k] with c = coord * scale.
+    """
+    if dim % 4 != 0:
+        raise ValueError(f"dim ({dim}) must be divisible by 4 for a 2D sine embedding.")
+    num_freqs = dim // 4
+    freqs = temperature ** (torch.arange(num_freqs, device=coords.device, dtype=torch.float32) / num_freqs)
+    c = coords.float() * scale
+    x = c[..., 0:1] / freqs
+    y = c[..., 1:2] / freqs
+    out = torch.cat([y.sin(), y.cos(), x.sin(), x.cos()], dim=-1)
+    return out.to(coords.dtype) if coords.is_floating_point() else out
 
 
 def _as_hw(grid_size: int | tuple[int, int]) -> tuple[int, int]:

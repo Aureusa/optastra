@@ -31,7 +31,8 @@ dependencies = [
     "torch>=2.1",
     "torchvision>=0.16",
     "pyyaml>=6.0",
-    "matplotlib"
+    "matplotlib",
+    "scipy>=1.10",   # Hungarian matching (DETR set losses)
 ]
 
 [project.optional-dependencies]

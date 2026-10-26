@@ -2,6 +2,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from typing import Iterable, Iterator, Literal, Mapping, Any
 import logging
+import math
 import time
 import torch
 import torch.nn as nn
@@ -53,6 +54,11 @@ class Trainer:
     - ``clip_grad_norm``: if set, the total gradient norm is clipped to this
       value before each optimizer step, and the pre-clip norm is logged to
       storage as "grad_norm".
+    - ``skip_nonfinite_grads`` (default True): if the total gradient norm is
+      NaN or inf, the optimizer step is skipped (and logged; the running count
+      is in storage as "skipped_steps") instead of applied. One such step would
+      otherwise turn every weight into NaN -- clipping cannot rescue an
+      infinite norm. fp16 runs already get this from the GradScaler.
     - ``distributed``: multi-process data-parallel training (DDP), one
       process per GPU. None (default) = on exactly when the script was
       launched with ``torchrun --nproc_per_node=N`` (N > 1), so the same
@@ -108,6 +114,7 @@ class Trainer:
         precision: Precision = "fp32",
         grad_accum_steps: int = 1,
         clip_grad_norm: float | None = None,
+        skip_nonfinite_grads: bool = True,
         distributed: bool | None = None,
         sync_batchnorm: bool = False,
         find_unused_parameters: bool = False,
@@ -136,6 +143,8 @@ class Trainer:
         self.precision = precision
         self.grad_accum_steps = grad_accum_steps
         self.clip_grad_norm = clip_grad_norm
+        self.skip_nonfinite_grads = skip_nonfinite_grads
+        self.skipped_steps = 0
         # A disabled GradScaler is a transparent pass-through, so the train
         # step has one code path for every precision.
         self.grad_scaler = torch.amp.GradScaler(resolved_device.type, enabled=(precision == "fp16"))
@@ -320,11 +329,24 @@ class Trainer:
             for k, v in output.losses.items():
                 losses_sum[k] = losses_sum.get(k, 0.0) + v.item()
 
-        if self.clip_grad_norm is not None:
-            self.grad_scaler.unscale_(state.optimizer)  # clip the real gradients, not the scaled ones
-            grad_norm = torch.nn.utils.clip_grad_norm_(state.model.parameters(), self.clip_grad_norm)
-            self.storage.put_scalar("grad_norm", grad_norm.item())
-        self.grad_scaler.step(state.optimizer)  # skips the step if fp16 grads overflowed
+        grad_norm = None
+        if self.clip_grad_norm is not None or self.skip_nonfinite_grads:
+            self.grad_scaler.unscale_(state.optimizer)  # clip / check the real gradients, not the scaled ones
+            max_norm = self.clip_grad_norm if self.clip_grad_norm is not None else float("inf")
+            grad_norm = torch.nn.utils.clip_grad_norm_(state.model.parameters(), max_norm).item()
+            if self.clip_grad_norm is not None:
+                self.storage.put_scalar("grad_norm", grad_norm)
+        if (self.skip_nonfinite_grads and grad_norm is not None and not math.isfinite(grad_norm)
+                and not self.grad_scaler.is_enabled()):
+            # The norm is computed on the (DDP-averaged) gradients, so every process skips together.
+            state.optimizer.zero_grad(set_to_none=True)
+            self.skipped_steps += 1
+            self.logger.warning(f"iter {state.iter}: non-finite gradient norm ({grad_norm}); optimizer step skipped "
+                                f"({self.skipped_steps} so far)")
+        else:
+            self.grad_scaler.step(state.optimizer)  # skips the step if fp16 grads overflowed
+        if self.skipped_steps:                      # only once something was skipped: keeps the usual logs unchanged
+            self.storage.put_scalar("skipped_steps", self.skipped_steps)
         self.grad_scaler.update()
 
         n = self.grad_accum_steps

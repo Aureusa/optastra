@@ -34,6 +34,7 @@ from .backbones import Backbone
 from .necks import Neck
 from .heads import Head
 from .tasks import Task
+from .decoders import Decoder
 from .algorithms.base import Algorithm
 from .architectures import Architecture
 from .proposal_generators import ProposalGenerator
@@ -64,6 +65,7 @@ __all__ = [
     "Backbone",
     "Neck",
     "Head",
+    "Decoder",
     "Task",
     "Algorithm",
     "Architecture",

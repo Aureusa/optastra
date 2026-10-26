@@ -398,3 +398,53 @@ def _compile_run(compile):
     trainer = Trainer(model, task, torch.optim.SGD(model.parameters(), lr=0.1), device="cpu", compile=compile)
     trainer.train(build_dataloader(data, task=task, batch_size=4), max_iter=6)
     return model, trainer
+
+
+# --- non-finite gradients ------------------------------------------------------------
+
+class _ExplodingTask:
+    """Regression loss, except on the batch flagged ``explode``: there the loss is
+    multiplied by inf, so its gradient is inf/NaN (the failure seen in long bf16 runs)."""
+
+    def run_step(self, model, batch, stage="train"):
+        loss = ((model(batch["inputs"]) - batch["targets"]) ** 2).mean()
+        if bool(batch["explode"]):
+            loss = loss * float("inf")
+        return TaskStepOutput(loss=loss, losses={"mse": loss})
+
+
+def _exploding_batches():
+    x, y = torch.ones(2, 4), torch.zeros(2, 1)
+    return [{"inputs": x, "targets": y, "explode": torch.tensor(i == 1)} for i in range(3)]
+
+
+@pytest.mark.parametrize("clip", [None, 1.0])
+def test_nonfinite_gradient_step_is_skipped(clip):
+    """Step 1 has an infinite gradient: it is skipped (weights untouched, count logged),
+    and training carries on with finite weights."""
+    torch.manual_seed(0)
+    model = nn.Linear(4, 1, bias=False)
+    opt = torch.optim.SGD(model.parameters(), lr=0.01)
+    seen = []
+
+    class Snapshot(Hook):
+        def after_step(self, state):
+            seen.append(model.weight.detach().clone())
+
+    trainer = Trainer(model, _ExplodingTask(), opt, device="cpu", clip_grad_norm=clip, hooks=[Snapshot()])
+    trainer.train(_exploding_batches(), max_iter=3)
+    assert trainer.skipped_steps == 1
+    assert trainer.storage.latest()["skipped_steps"] == 1
+    assert torch.equal(seen[1], seen[0])                     # the exploding step changed nothing
+    assert not torch.equal(seen[2], seen[1])                 # the next one trained normally
+    assert torch.isfinite(model.weight).all()
+
+
+def test_nonfinite_gradient_step_is_applied_when_guard_is_off():
+    """Without the guard the same step turns the weights into NaN: what the guard prevents."""
+    model = nn.Linear(4, 1, bias=False)
+    trainer = Trainer(model, _ExplodingTask(), torch.optim.SGD(model.parameters(), lr=0.01), device="cpu",
+                      clip_grad_norm=1.0, skip_nonfinite_grads=False)
+    trainer.train(_exploding_batches(), max_iter=3)
+    assert trainer.skipped_steps == 0
+    assert not torch.isfinite(model.weight).all()

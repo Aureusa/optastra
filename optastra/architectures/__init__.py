@@ -3,3 +3,4 @@ from .fast_rcnn import *
 from .faster_rcnn import *
 from .masked_rcnn import *
 
+from .detr import *

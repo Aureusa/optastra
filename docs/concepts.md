@@ -4,7 +4,8 @@
 
 ```text
 Backbone            images -> FeatureMaps            (feature extraction only)
-Neck                FeatureMaps -> FeatureMaps        (e.g. pooling, FPN)
+Neck                FeatureMaps -> FeatureMaps        (e.g. pooling, FPN, DETR encoder)
+Decoder             FeatureMaps -> a set of tokens    (e.g. DETR object queries)
 Head                FeatureMaps -> HeadOutput         (task-specific prediction)
 Task                owns losses/metrics/target formatting for a Head's output
 Algorithm            a self-supervised objective: builds its model from config, owns per-step
@@ -56,6 +57,39 @@ clf = build_sequential_model(("resnet50", {"weights": "byol_r50.pt"}), ["global_
 `algo.after_optimizer_step(state)` after every step (BYOL's EMA target
 update) and stores the algorithm's schedule state in checkpoints.
 
+## Decoders and set prediction
+
+A **`Decoder`** reads features as a memory and emits a *set of tokens* that
+are not tied to pixel locations -- `FeatureMaps.patch_tokens` (B, M, D),
+with `out_spec.embed_dim = D` -- so any token-reading `Head` can sit on top.
+`FeatureMaps.extra` carries what the decoder knows about its tokens
+(`optastra.decoders.keys`): every layer's output (`layer_tokens`, for
+auxiliary losses), a `query_mask`, and the queries' `reference_points`
+when they have them.
+
+`QueryDecoder` is DETR's decoder (`detr_decoder`, `conditional_detr_decoder`,
+`dab_detr_decoder`). Its `query_type` is the ablation axis of how a query
+carries position:
+
+- `"vanilla"` (DETR) -- a learned positional embedding per query; heads
+  predict absolute positions.
+- `"conditional"` (Conditional DETR) -- each embedding predicts a reference
+  point; cross-attention concatenates content and spatial parts per head.
+- `"dab"` (DAB-DETR) -- the reference point *is* the learned query.
+
+Queries with reference points can be supplied from outside
+(`decoder(features, queries=QuerySet(content, reference_points, mask))`),
+e.g. priors at known source positions; vanilla queries cannot.
+
+The `DETR` architecture is a composition -- Backbone -> optional Neck (e.g.
+FPN) -> optional `detr_encoder` Neck -> Decoder -> Head -- and runs the head
+on every decoder layer (`extra["aux_outputs"]`). Swap the head for the
+target: `detr_box_head` (classes + boxes; `detr_criterion`,
+`detr_postprocessor`, with the `detection_task`) or `keypoint_head` (points +
+objectness; `point_detection_task`). Both criteria match predictions to
+targets with `hungarian_matcher` (scipy); `point_set_losses` gives the point
+loss for an assignment you computed yourself.
+
 ## Registry -> Factory -> ComponentRef
 
 Every family (backbones, necks, heads, tasks, ...) follows the same
@@ -88,7 +122,7 @@ Factory subclass    Backbone.create(name, **overrides), Backbone.register(...)
      ```
 3. **`SpecFactory`** is `Factory` plus one extra required argument:
    `in_spec: FeatureSpec`. Use it for anything that consumes an
-   upstream feature spec -- `Neck`, `Head`, `ProposalGenerator`,
+   upstream feature spec -- `Neck`, `Decoder`, `Head`, `ProposalGenerator`,
    `RegionExtractor`. Everything else (`Backbone`, `Task`, `Algorithm`,
    `Architecture`, `Optimizer`, `Scheduler`, `Transform`) has no
    upstream wiring and uses plain `Factory`.
